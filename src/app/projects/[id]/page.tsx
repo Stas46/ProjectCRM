@@ -20,10 +20,15 @@ import {
   Download,
   Image as ImageIcon,
   FileUp,
-  FileBox
+  FileBox,
+  Send,
+  Paperclip
+} from 'lucide-react';
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { mockMessages } from './mock-messages';
 
 // Типы данных
 interface ProjectDetails {
@@ -87,6 +92,25 @@ interface ProjectInvoice {
   supplier: string;
   status: 'draft' | 'pending' | 'paid' | 'cancelled';
   total_amount: number;
+}
+
+interface ProjectMessage {
+  id: string;
+  user: {
+    id: string;
+    name: string;
+    initials: string;
+    avatar?: string;
+  };
+  content: string;
+  created_at: string;
+  attachments?: {
+    id: string;
+    name: string;
+    type: string;
+    size: string;
+    url: string;
+  }[];
 }
 
 // Временные данные
@@ -259,10 +283,25 @@ const statusMap = {
 };
 
 export default function ProjectPage() {
+  const { id } = useParams();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'invoices' | 'files' | 'team' | 'chat'>('overview');
+  const [newMessage, setNewMessage] = useState('');
+  
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['overview', 'tasks', 'invoices', 'files', 'team', 'chat'].includes(tab)) {
+      setActiveTab(tab as any);
+    }
+  }, [searchParams]);
   
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU');
+  };
+  
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
   };
   
   const formatCurrency = (amount: number) => {
@@ -920,6 +959,102 @@ export default function ProjectPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Содержимое вкладки Чат */}
+      {activeTab === 'chat' && (
+        <div className="bg-white h-[calc(100vh-220px)] flex flex-col rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-medium text-gray-900">Чат проекта</h2>
+            
+            <Link
+              href={`/projects/${mockProject.id}/chat/new`}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-300"
+            >
+              <Plus size={16} className="mr-2" />
+              Новое сообщение
+            </Link>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {mockMessages.map((message) => (
+              <div key={message.id} className="flex items-start">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm">
+                    {message.user.initials}
+                  </div>
+                </div>
+                <div className="ml-3 flex-1">
+                  <div className="flex items-center">
+                    <p className="text-sm font-medium text-gray-900">{message.user.name}</p>
+                    <span className="ml-2 text-xs text-gray-500">{formatDateTime(message.created_at)}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-gray-700">
+                    <p>{message.content}</p>
+                  </div>
+                  
+                  {message.attachments && message.attachments.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs text-gray-500 mb-1">Вложения:</p>
+                      <ul className="space-y-1">
+                        {message.attachments.map((attachment) => (
+                          <li key={attachment.id} className="flex items-center text-sm">
+                            <Paperclip size={14} className="text-gray-400 mr-1" />
+                            <a
+                              href={attachment.url}
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {attachment.name} ({attachment.size})
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="p-4 border-t border-gray-200">
+            <div className="flex items-center">
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Введите сообщение..."
+                className="flex-1 rounded-l-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                rows={2}
+              />
+              <button
+                type="button"
+                className="inline-flex items-center px-4 py-2 h-full bg-blue-600 text-white rounded-r-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+            
+            <div className="flex justify-between items-center mt-2">
+              <div>
+                <button
+                  type="button"
+                  className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <Paperclip size={16} className="mr-1" />
+                  Прикрепить файл
+                </button>
+              </div>
+              
+              <Link
+                href={`/projects/${mockProject.id}/chat/new`}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Расширенный режим
+              </Link>
+            </div>
           </div>
         </div>
       )}
