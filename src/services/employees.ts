@@ -42,6 +42,49 @@ export async function getEmployeeById(id: string): Promise<Employee | null> {
   }
 }
 
+// Создание нового сотрудника
+export async function createEmployee(employee: Omit<Employee, 'id' | 'created_at' | 'updated_at'>): Promise<Employee | null> {
+  try {
+    const { data, error } = await supabase
+      .from('employees')
+      .insert([employee])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Ошибка при создании сотрудника:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Исключение при создании сотрудника:', err);
+    throw err;
+  }
+}
+
+// Обновление сотрудника
+export async function updateEmployee(id: string, updates: Partial<Omit<Employee, 'id' | 'created_at' | 'updated_at'>>): Promise<Employee | null> {
+  try {
+    const { data, error } = await supabase
+      .from('employees')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Ошибка при обновлении сотрудника с ID ${id}:`, error);
+      throw error;
+    }
+
+    return data;
+  } catch (err) {
+    console.error(`Исключение при обновлении сотрудника с ID ${id}:`, err);
+    throw err;
+  }
+}
+
 // Получение всех бригад
 export async function getAllCrews(): Promise<Crew[]> {
   try {

@@ -94,104 +94,96 @@ const TaskCard = ({
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      <div className="p-4">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center">
-            <span className={`flex items-center text-xs px-2.5 py-1 rounded-full ${statusInfo.color}`}>
-              <StatusIcon size={14} className="mr-1" />
-              {statusInfo.label}
-            </span>
+      <div className="p-3">
+        {/* Header - Compact Layout */}
+        <div className="flex items-center justify-between">
+          <div className="flex-grow">
+            <div className="flex items-center mb-1">
+              <span className={`flex items-center text-xs px-2 py-0.5 rounded-full ${statusInfo.color} mr-2`}>
+                <StatusIcon size={12} className="mr-1" />
+                {statusInfo.label}
+              </span>
+              
+              <span className={`text-xs ${priorityInfo.color} mr-2`}>
+                {priorityInfo.label}
+              </span>
+              
+              {dueDate && (
+                <span className={`flex items-center text-xs ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                  <Clock size={12} className="mr-1" />
+                  {formatDate(dueDate)}
+                </span>
+              )}
+            </div>
             
-            <span className={`ml-2 text-xs ${priorityInfo.color}`}>
-              {priorityInfo.label}
-            </span>
+            {/* Title */}
+            <Link href={`/tasks/${id}`}>
+              <h3 className="font-medium text-gray-900 hover:text-blue-600 transition-colors text-sm truncate">
+                {title}
+              </h3>
+            </Link>
           </div>
           
-          <div className="relative">
-            <button 
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="p-1 rounded-full hover:bg-gray-100"
-            >
-              <MoreVertical size={16} />
-            </button>
-            
-            {isMenuOpen && (
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <div className="py-1">
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Редактировать
-                  </a>
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Изменить статус
-                  </a>
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Удалить
-                  </a>
-                </div>
+          <div className="flex items-center space-x-2 ml-2">
+            {/* Assignee */}
+            {assigneeName ? (
+              <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs" title={assigneeName}>
+                {assigneeInitials}
+              </div>
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs" title="Не назначено">
+                <User size={12} />
               </div>
             )}
+            
+            {/* Menu */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="p-1 rounded-full hover:bg-gray-100"
+              >
+                <MoreVertical size={14} />
+              </button>
+              
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
+                  <div className="py-1">
+                    <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      Редактировать
+                    </a>
+                    <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      Изменить статус
+                    </a>
+                    <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      Удалить
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         
-        {/* Title */}
-        <Link href={`/tasks/${id}`}>
-          <h3 className="font-medium text-gray-900 mb-2 hover:text-blue-600 transition-colors">
-            {title}
-          </h3>
-        </Link>
-        
-        {/* Description */}
-        {description && (
-          <p className="text-sm text-gray-500 mb-3 line-clamp-2">{description}</p>
-        )}
-        
-        {/* Project */}
-        <div className="mb-3">
+        {/* Project and Additional Info */}
+        <div className="flex justify-between items-center text-xs mt-1">
           <Link 
             href={`/projects/${projectId}`}
-            className="text-xs text-blue-600 hover:underline"
+            className="text-blue-600 hover:underline"
           >
             {projectTitle}
           </Link>
-        </div>
-        
-        {/* Footer */}
-        <div className="flex flex-wrap items-center justify-between">
-          <div className="flex items-center">
-            {assigneeName ? (
-              <div className="flex items-center">
-                <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs">
-                  {assigneeInitials}
-                </div>
-                <span className="ml-2 text-xs text-gray-600">{assigneeName}</span>
-              </div>
-            ) : (
-              <div className="flex items-center text-gray-400 text-xs">
-                <User size={14} className="mr-1" />
-                <span>Не назначено</span>
-              </div>
-            )}
-          </div>
           
-          <div className="flex items-center gap-3">
-            {dueDate && (
-              <div className={`flex items-center text-xs ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
-                <Clock size={14} className="mr-1" />
-                <span>{formatDate(dueDate)}</span>
-              </div>
-            )}
-            
+          <div className="flex items-center space-x-3">
             {messagesCount > 0 && (
-              <div className="flex items-center text-xs text-gray-500">
-                <MessageSquare size={14} className="mr-1" />
+              <div className="flex items-center text-gray-500">
+                <MessageSquare size={12} className="mr-1" />
                 <span>{messagesCount}</span>
               </div>
             )}
             
             {attachmentsCount > 0 && (
-              <div className="flex items-center text-xs text-gray-500">
-                <Paperclip size={14} className="mr-1" />
+              <div className="flex items-center text-gray-500">
+                <Paperclip size={12} className="mr-1" />
                 <span>{attachmentsCount}</span>
               </div>
             )}

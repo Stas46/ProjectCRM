@@ -1,6 +1,19 @@
 import { supabase } from '@/lib/supabase';
 import { ProjectMessage, MessageAttachment } from '@/types/message';
 
+interface MessageRecord {
+  id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  users: {
+    id: string;
+    email: string;
+    raw_user_meta_data: any;
+  };
+}
+
 /**
  * Получение всех сообщений для проекта
  * @param projectId - ID проекта

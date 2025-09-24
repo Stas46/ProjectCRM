@@ -1,8 +1,13 @@
 import type { NextConfig } from "next";
 import withPWA from 'next-pwa';
+import path from 'path';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // @ts-ignore: Добавляем конфигурацию Turbopack
+  turbopack: {
+    root: path.resolve(__dirname)
+  }
 };
 
 const pwaConfig = withPWA({

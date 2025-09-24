@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, CalendarDays, FileText, MessageSquare, User, Menu, X } from 'lucide-react';
+import { Home, CalendarDays, FileText, MessageSquare, User, Menu, X, FileSearch } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -14,6 +14,7 @@ const SideNav = () => {
     { icon: FileText, label: 'Задачи', href: '/tasks' },
     { icon: CalendarDays, label: 'Календарь', href: '/calendar' },
     { icon: MessageSquare, label: 'Чаты', href: '/chats' },
+    { icon: FileSearch, label: 'Распознавание счетов', href: '/invoices/recognition' },
     { icon: User, label: 'Профиль', href: '/profile' },
   ];
 

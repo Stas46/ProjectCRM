@@ -5,6 +5,9 @@ export interface Employee {
   position: string;
   email?: string;
   phone?: string;
+  role: 'admin' | 'manager' | 'installer' | 'worker';
+  is_active: boolean;
+  avatar_url?: string;
   created_at: string;
   updated_at?: string;
 }

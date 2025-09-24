@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, CalendarDays, FileText, MessageSquare, User } from 'lucide-react';
+import { Home, CalendarDays, FileText, MessageSquare, User, FileSearch } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -12,7 +12,7 @@ const MobileNav = () => {
     { icon: FileText, label: 'Задачи', href: '/tasks' },
     { icon: CalendarDays, label: 'Календарь', href: '/calendar' },
     { icon: MessageSquare, label: 'Чаты', href: '/chats' },
-    { icon: User, label: 'Профиль', href: '/profile' },
+    { icon: FileSearch, label: 'Счета', href: '/invoices/recognition' },
   ];
 
   return (

@@ -106,6 +106,22 @@ export default function InvoicesPage() {
     dateTo: undefined as string | undefined,
   });
   
+  // Обработчик изменения фильтров
+  const handleFilterChange = (newFilters: {
+    search: string;
+    status: string[];
+    category: string[];
+    dateFrom?: string;
+    dateTo?: string;
+  }) => {
+    setFilters({
+      ...filters,
+      ...newFilters,
+      dateFrom: newFilters.dateFrom,
+      dateTo: newFilters.dateTo
+    });
+  };
+  
   // Статистика по счетам
   const totalAmount = mockInvoices.reduce((sum, invoice) => sum + invoice.amount, 0);
   const paidAmount = mockInvoices
@@ -182,7 +198,7 @@ export default function InvoicesPage() {
       </div>
       
       {/* Фильтры */}
-      <InvoiceFilters onFilterChange={setFilters} />
+      <InvoiceFilters onFilterChange={handleFilterChange} />
       
       {/* Действия с выбранными */}
       <div className="flex justify-between items-center mb-4">

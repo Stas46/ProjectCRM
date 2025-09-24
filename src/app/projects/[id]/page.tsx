@@ -2,6 +2,7 @@
 
 import AppLayout from '@/components/app-layout';
 import TaskCard from '@/components/task-card';
+import { Button } from '@/components/ui/button';
 import { 
   ArrowLeft, 
   Edit, 
@@ -23,7 +24,6 @@ import {
   FileBox,
   Send,
   Paperclip
-} from 'lucide-react';
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
@@ -236,10 +236,6 @@ const mockTasks: ProjectTask[] = [
     attachmentsCount: 1,
   },
 ];
-    messagesCount: 2,
-    attachmentsCount: 1,
-  },
-];
 
 const mockInvoices: ProjectInvoice[] = [
   {
@@ -269,10 +265,6 @@ const mockInvoices: ProjectInvoice[] = [
     total_amount: 76000
   }
 ];
-    messagesCount: 2,
-    attachmentsCount: 1,
-  },
-];
 
 const statusMap = {
   planning: { label: 'Планирование', color: 'bg-purple-100 text-purple-800' },
@@ -287,6 +279,7 @@ export default function ProjectPage() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'invoices' | 'files' | 'team' | 'chat'>('overview');
   const [newMessage, setNewMessage] = useState('');
+  const [showDescription, setShowDescription] = useState(false);
   
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -445,9 +438,21 @@ export default function ProjectPage() {
           <div className="md:col-span-2 space-y-6">
             {/* Общая информация */}
             <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">О проекте</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-medium text-gray-900">О проекте</h2>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setShowDescription(!showDescription)}
+                >
+                  {showDescription ? 'Скрыть описание' : 'Показать описание'}
+                </Button>
+              </div>
               
-              <p className="text-gray-700 mb-6">{mockProject.description}</p>
+              {showDescription && (
+                <p className="text-gray-700 mb-6">{mockProject.description}</p>
+              )}
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
@@ -806,6 +811,9 @@ export default function ProjectPage() {
           )}
         </div>
       )}
+      
+      {/* Содержимое вкладки Файлы */}
+      {activeTab === 'files' && (
         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-medium text-gray-900">Файлы проекта</h2>
@@ -889,6 +897,7 @@ export default function ProjectPage() {
           </div>
         </div>
       )}
+      
       
       {/* Содержимое вкладки Команда */}
       {activeTab === 'team' && (
