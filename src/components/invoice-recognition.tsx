@@ -29,9 +29,9 @@ export default function InvoiceRecognition() {
     }
 
     // Проверка типа файла (только изображения)
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
     if (!validTypes.includes(selectedFile.type)) {
-      setError('Пожалуйста, выберите изображение (JPEG, PNG, WEBP, HEIC) или PDF-файл');
+      setError('Пожалуйста, выберите изображение (JPEG, PNG, WEBP, HEIC)');
       return;
     }
 
@@ -44,16 +44,11 @@ export default function InvoiceRecognition() {
     setFile(selectedFile);
 
     // Создание превью для изображений
-    if (selectedFile.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setPreview(reader.result as string);
-      };
-      reader.readAsDataURL(selectedFile);
-    } else {
-      // Для PDF-файлов используем стандартную иконку
-      setPreview(null);
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPreview(reader.result as string);
+    };
+    reader.readAsDataURL(selectedFile);
   };
 
   // Очистка выбранного файла
@@ -78,9 +73,8 @@ export default function InvoiceRecognition() {
       const formData = new FormData();
       formData.append('file', file);
       
-      // Определяем URL API-маршрута (для тестирования можно использовать test-file-upload)
-      const apiUrl = '/api/recognize-invoice';
-      // const apiUrl = '/api/test-file-upload'; // Раскомментировать для тестирования
+      // Используем новый чистый API
+      const apiUrl = '/api/invoice-ocr';
       
       // Отправляем запрос на API-маршрут распознавания
       const response = await fetch(apiUrl, {
@@ -135,7 +129,7 @@ export default function InvoiceRecognition() {
         <CardHeader>
           <CardTitle>Загрузка счета</CardTitle>
           <CardDescription>
-            Загрузите четкое изображение или PDF-файл счета для распознавания.
+            Загрузите четкое изображение счета для распознавания.
             Для лучшего результата используйте файлы хорошего качества без бликов и теней.
           </CardDescription>
           </CardHeader>
@@ -146,7 +140,7 @@ export default function InvoiceRecognition() {
                   id="invoice-file" 
                   type="file" 
                   onChange={handleFileChange}
-                  accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,image/heic"
                   disabled={isProcessing}
                 />
                 {file && (

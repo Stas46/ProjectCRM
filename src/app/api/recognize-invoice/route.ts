@@ -1,201 +1,919 @@
-﻿import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';import { NextRequest, NextResponse } from 'next/server';
 
-import { GoogleAuth } from 'google-auth-library';import { GoogleAuth } from 'google-auth-library';
 
-import { ImageAnnotatorClient } from '@google-cloud/vision';import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-import { enhanceImageForOCR, binarizeImage, enhanceInvoiceImage, enhanceTableImage } from '@/lib/image-processing';import { enhanceImageForOCR, binarizeImage, enhanceInvoiceImage, enhanceTableImage } from     }
+export async function POST(request: NextRequest) {
 
-import { convertPdfToImage } from '@/lib/pdf-processing';  } catch (error: any) {
+  return NextResponse.json({
 
-    console.error('Глобальная ошибка в API распознавания счетов:', error);
+    success: true,export async function POST(request: NextRequest) {
 
-// Create client for Google Cloud Vision API    return NextResponse.json(
+    message: 'API очищен от PDF зависимостей',
 
-let visionClient: ImageAnnotatorClient | null = null;      { 
+    status: 'ready'  return NextResponse.json({
 
-        error: 'Внутренняя ошибка сервера', 
+  });
 
-try {        details: error.message || 'Неизвестная ошибка',
+}    success: true,export async function POST(request: NextRequest) {import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-  // Initialize client with credentials from environment variables        suggestions: [
+    message: 'API для распознавания готов',
 
-  const auth = new GoogleAuth({          'Попробуйте повторить запрос позже',
+    note: 'PDF зависимости удалены, работает только с изображениями'  try {
 
-    credentials: {          'Убедитесь, что файл не поврежден',
+  });
 
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,          'Попробуйте файл меньшего размера или другого формата'
+}    const formData = await request.formData();import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),        ]
+    const file = formData.get('file') as File;
 
-    },      },
+    let visionClient: ImageAnnotatorClient | null = null;
 
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    if (!file) {
 
-  });    );
+      return NextResponse.json({ error: 'Файл не найден' }, { status: 400 });import { GoogleAuth } from 'google-auth-library';
+
+    }
+
+    function getVisionClient() {
+
+    // Пока просто возвращаем успех для тестирования
+
+    return NextResponse.json({  if (!visionClient) {let visionClient: ImageAnnotatorClient | null = null;
+
+      success: true,
+
+      message: 'Файл получен',    try {
+
+      fileName: file.name,
+
+      fileSize: file.size,      const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;import { ImageAnnotatorClient } from '@google-cloud/vision';import { GoogleAuth } from 'google-auth-library';
+
+      fileType: file.type
+
+    });      
+
+    
+
+  } catch (error: any) {      if (credentials) {function getVisionClient() {
+
+    return NextResponse.json(
+
+      { error: 'Ошибка сервера', details: error.message },        const credentialsObj = JSON.parse(credentials);
+
+      { status: 500 }
+
+    );        visionClient = new ImageAnnotatorClient({  if (!visionClient) {
 
   }
 
-  visionClient = new ImageAnnotatorClient({ auth });}
+}          credentials: credentialsObj,
 
-} catch (error) {
+          projectId: credentialsObj.project_id    try {
 
-  console.error('Error initializing Google Vision API client:', error);/**
+        });
 
-} * Извлекает структурированные данные из распознанного текста счета
+      } else {      const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;// Create client for Google Cloud Vision APIimport { ImageAnnotatorClient } from '@google-cloud/vision';import { GoogleAuth } from 'google-auth-library';import { GoogleAuth } from 'google-auth-library';
 
- * @param fullText Полный текст документа
+        visionClient = new ImageAnnotatorClient();
 
-export async function POST(request: NextRequest) { * @param textElements Отдельные элементы текста с координатами
+      }      
 
-  try { * @returns Объект с данными счета
+      
 
-    // Check if client is initialized */
+      console.log('Google Vision API client initialized');      if (credentials) {let visionClient: ImageAnnotatorClient | null = null;
 
-    if (!visionClient) {function extractInvoiceData(
+    } catch (error) {
 
-      console.error('Google Vision API client not initialized');  fullText: string, 
+      console.error('Failed to initialize Google Vision client:', error);        const credentialsObj = JSON.parse(credentials);
 
-      return NextResponse.json(  textElements: Array<{text: string, confidence: number, boundingBox: any[]}>
+      throw new Error('Google Vision API не настроен');
 
-        { error: 'Ошибка конфигурации Google Vision API' },) {
+    }        visionClient = new ImageAnnotatorClient({
 
-        { status: 500, headers: { 'Content-Type': 'application/json' } }  // Инициализация объекта с данными счета
+  }
 
-      );  const data: {
+            credentials: credentialsObj,
 
-    }    invoiceNumber?: string;
+  return visionClient;
 
-    invoiceDate?: string;
+}          projectId: credentialsObj.project_id// Initialize Google Vision client
 
-    // Check request type    dueDate?: string;
 
-    if (!request.headers.get('content-type')?.includes('multipart/form-data')) {    totalAmount?: string;
 
-      return NextResponse.json(    totalAmountWithVAT?: string;
+export async function POST(request: NextRequest) {        });
 
-        {     vatAmount?: string;
+  try {
 
-          error: 'Неверный формат запроса. Ожидается multipart/form-data',    supplier?: {
+    console.log('Получен запрос на распознавание');      } else {function getVisionClient() {// Create client for Google Cloud Vision APIimport { ImageAnnotatorClient } from '@google-cloud/vision';import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-          suggestions: ['Проверьте правильность отправки формы']      name?: string;
+    
 
-        },      inn?: string;
+    const formData = await request.formData();        visionClient = new ImageAnnotatorClient();
 
-        { status: 400, headers: { 'Content-Type': 'application/json' } }      kpp?: string;
+    const file = formData.get('file') as File;
 
-      );      address?: string;
+          }  if (!visionClient) {
 
-    }    };
+    if (!file) {
 
-    customer?: {
+      return NextResponse.json(      
 
-    // Get form from request      name?: string;
+        { error: 'Файл не найден' },
 
-    const formData = await request.formData();      inn?: string;
+        { status: 400 }      console.log('Google Vision API client initialized');    try {let visionClient: ImageAnnotatorClient | null = null;
 
-    const file = formData.get('file') as File | null;      address?: string;
+      );
 
-    };
+    }    } catch (error) {
 
-    if (!file) {    paymentInfo?: {
+    
 
-      return NextResponse.json(      bankName?: string;
+    console.log(`Файл: ${file.name}, тип: ${file.type}`);      console.error('Failed to initialize Google Vision client:', error);      // Check if we have credentials in environment variables
 
-        { error: 'Файл не найден в запросе' },      bankAccount?: string;
+    
 
-        { status: 400, headers: { 'Content-Type': 'application/json' } }      correspondentAccount?: string;
+    // Проверка типа файла      throw new Error('Google Vision API не настроен');
 
-      );      bic?: string;
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
-    }    };
+    if (!validTypes.includes(file.type)) {    }      const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;import { enhanceImageForOCR, binarizeImage, enhanceInvoiceImage, enhanceTableImage } from '@/lib/image-processing';import { enhanceImageForOCR, binarizeImage, enhanceInvoiceImage, enhanceTableImage } from     }
 
-    items?: Array<{
+      return NextResponse.json(
 
-    // Get file extension      name?: string;
+        {   }
 
-    const fileExtension = file.name.split('.').pop()?.toLowerCase();      quantity?: string;
+          error: 'Поддерживаются только изображения: JPEG, PNG, WEBP, HEIC',
 
-          unit?: string;
+          suggestions: ['Используйте изображение в поддерживаемом формате']        
 
-    // Get file data as ArrayBuffer      price?: string;
+        },
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer());      amount?: string;
+        { status: 400 }  return visionClient;
 
-        }>;
+      );
 
-    // Variable to store image buffer (for PDF or image)  } = {
+    }}      if (credentials) {// Initialize Google Vision client
 
-    let imageBuffer: Buffer = fileBuffer; // Default to the original buffer    supplier: {},
+    
 
-        customer: {},
+    // Проверка размера
 
-    // Process file based on extension    paymentInfo: {},
+    if (file.size > 10 * 1024 * 1024) {
 
-    if (fileExtension === 'pdf') {    items: []
+      return NextResponse.json(export async function POST(request: NextRequest) {        // Parse credentials from environment variable
 
-      try {  };
+        { 
 
-        // Convert PDF to image  
+          error: 'Файл слишком большой (максимум 10MB)',  try {
 
-        try {  // Поиск номера счета
+          suggestions: ['Сожмите изображение']
 
-          const convertedBuffer = await convertPdfToImage(fileBuffer);  const invoiceNumberRegex = /(?:счет|счёт|счета|invoice|№|номер)[^0-9]*([0-9\/-]+)/i;
+        },    console.log('Получен запрос на распознавание');        const credentialsObj = JSON.parse(credentials);function getVisionClient() {import { convertPdfToImage } from '@/lib/pdf-processing';  } catch (error: any) {
 
-          if (convertedBuffer) {  const invoiceNumberMatch = fullText.match(invoiceNumberRegex);
+        { status: 400 }
 
-            imageBuffer = convertedBuffer;  if (invoiceNumberMatch && invoiceNumberMatch[1]) {
+      );    
 
-          } else {    data.invoiceNumber = invoiceNumberMatch[1].trim();
+    }
 
-            throw new Error('Не удалось конвертировать PDF в изображение');  }
+        const formData = await request.formData();        
 
-          }  
+    const imageBuffer = Buffer.from(await file.arrayBuffer());
 
-        } catch (conversionError: any) {  // Поиск даты счета
+    console.log(`Буфер готов: ${imageBuffer.length} байт`);    const file = formData.get('file') as File;
 
-          console.error('Ошибка при конвертации PDF в изображение:', conversionError);  const dateRegex = /(?:от|date)[^0-9]*(\d{1,2}[.,-\/]\d{1,2}[.,-\/]\d{2,4}|\d{1,2}\s+[а-яА-Яa-zA-Z]+\s+\d{4})/i;
+    
 
-          return NextResponse.json(  const dateMatch = fullText.match(dateRegex);
+    const client = getVisionClient();            visionClient = new ImageAnnotatorClient({  if (!visionClient) {
 
-            {   if (dateMatch && dateMatch[1]) {
+    
 
-              error: 'Ошибка при обработке PDF документа',     data.invoiceDate = dateMatch[1].trim();
+    console.log('Запускаем распознавание...');    if (!file) {
 
-              details: conversionError.message || 'Неизвестная ошибка',  }
+    const [result] = await client.textDetection({
+
+      image: { content: imageBuffer }      return NextResponse.json(          credentials: credentialsObj,
+
+    });
+
+            { error: 'Файл не найден' },
+
+    const detections = result.textAnnotations;
+
+            { status: 400 }          projectId: credentialsObj.project_id    try {    console.error('Глобальная ошибка в API распознавания счетов:', error);
+
+    if (!detections || detections.length === 0) {
+
+      console.log('Текст не найден');      );
+
+      return NextResponse.json(
+
+        {    }        });
+
+          error: 'Текст не найден в изображении',
+
+          suggestions: [    
+
+            'Проверьте качество изображения',
+
+            'Убедитесь, что документ читаемый'    console.log(`Файл: ${file.name}, тип: ${file.type}`);      } else {      // Check if we have credentials in environment variables
+
+          ]
+
+        },    
+
+        { status: 400 }
+
+      );    // Проверка типа файла        // Fallback to default authentication
+
+    }
+
+        const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+
+    const rawText = detections[0].description || '';
+
+    console.log(`Распознано ${rawText.length} символов`);    if (!validTypes.includes(file.type)) {        visionClient = new ImageAnnotatorClient();      const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;// Create client for Google Cloud Vision API    return NextResponse.json(
+
+    
+
+    const extractedData = extractBasicData(rawText);      return NextResponse.json(
+
+    
+
+    return NextResponse.json({        {       }
+
+      success: true,
+
+      rawText: rawText,          error: 'Поддерживаются только изображения: JPEG, PNG, WEBP, HEIC',
+
+      extractedData: extractedData,
+
+      method: 'google-vision'          suggestions: ['Используйте изображение в поддерживаемом формате']            
+
+    });
+
+            },
+
+  } catch (error: any) {
+
+    console.error('Ошибка:', error);        { status: 400 }      console.log('Google Vision API client initialized successfully');
+
+    
+
+    return NextResponse.json(      );
+
+      {
+
+        error: 'Ошибка сервера',    }    } catch (error) {      if (credentials) {let visionClient: ImageAnnotatorClient | null = null;      { 
+
+        details: error.message,
+
+        suggestions: ['Попробуйте еще раз']    
+
+      },
+
+      { status: 500 }    // Проверка размера      console.error('Failed to initialize Google Vision client:', error);
+
+    );
+
+  }    if (file.size > 10 * 1024 * 1024) {
+
+}
+
+      return NextResponse.json(      throw new Error('Google Vision API не настроен правильно');        // Parse credentials from environment variable
+
+function extractBasicData(text: string) {
+
+  const data: any = {        { 
+
+    numbers: [],
+
+    dates: [],          error: 'Файл слишком большой (максимум 10MB)',    }
+
+    amounts: []
+
+  };          suggestions: ['Сожмите изображение']
+
+  
+
+  // Числа        },  }        const credentialsObj = JSON.parse(credentials);        error: 'Внутренняя ошибка сервера', 
+
+  const numbers = text.match(/\d+(?:[.,]\d+)*/gi) || [];
+
+  data.numbers = numbers.slice(0, 10);        { status: 400 }
+
+  
+
+  // Даты      );  
+
+  const dates = text.match(/\d{1,2}[./]\d{1,2}[./]\d{2,4}/gi) || [];
+
+  data.dates = dates.slice(0, 5);    }
+
+  
+
+  // Суммы      return visionClient;        
+
+  const amounts = text.match(/\d+(?:[.,]\d+)*\s*(?:руб|₽|RUB)/gi) || [];
+
+  data.amounts = amounts.slice(0, 5);    const imageBuffer = Buffer.from(await file.arrayBuffer());
+
+  
+
+  return data;    console.log(`Буфер готов: ${imageBuffer.length} байт`);}
+
+}
+    
+
+    const client = getVisionClient();        visionClient = new ImageAnnotatorClient({try {        details: error.message || 'Неизвестная ошибка',
+
+    
+
+    console.log('Запускаем распознавание...');// Main API handler
+
+    const [result] = await client.textDetection({
+
+      image: { content: imageBuffer }export async function POST(request: NextRequest) {          credentials: credentialsObj,
+
+    });
+
+      try {
+
+    const detections = result.textAnnotations;
+
+        console.log('🔍 Получен запрос на распознавание счета');          projectId: credentialsObj.project_id  // Initialize client with credentials from environment variables        suggestions: [
+
+    if (!detections || detections.length === 0) {
+
+      console.log('Текст не найден');    
+
+      return NextResponse.json(
+
+        {    // Parse form data        });
+
+          error: 'Текст не найден в изображении',
+
+          suggestions: [    const formData = await request.formData();
+
+            'Проверьте качество изображения',
+
+            'Убедитесь, что документ читаемый'    const file = formData.get('file') as File;      } else {  const auth = new GoogleAuth({          'Попробуйте повторить запрос позже',
+
+          ]
+
+        },    
+
+        { status: 400 }
+
+      );    if (!file) {        // Fallback to default authentication
+
+    }
+
+          return NextResponse.json(
+
+    const rawText = detections[0].description || '';
+
+    console.log(`Распознано ${rawText.length} символов`);        { error: 'Файл не найден в запросе' },        visionClient = new ImageAnnotatorClient();    credentials: {          'Убедитесь, что файл не поврежден',
+
+    
+
+    const extractedData = extractBasicData(rawText);        { status: 400 }
+
+    
+
+    return NextResponse.json({      );      }
+
+      success: true,
+
+      rawText: rawText,    }
+
+      extractedData: extractedData,
+
+      method: 'google-vision'                client_email: process.env.GOOGLE_CLIENT_EMAIL,          'Попробуйте файл меньшего размера или другого формата'
+
+    });
+
+        console.log(`📄 Обрабатываем файл: ${file.name}, размер: ${file.size} байт, тип: ${file.type}`);
+
+  } catch (error: any) {
+
+    console.error('Ошибка:', error);          console.log('Google Vision API client initialized successfully');
+
+    
+
+    return NextResponse.json(    // Validate file type (only images now)
+
+      {
+
+        error: 'Ошибка сервера',    const validImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];    } catch (error) {      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),        ]
+
+        details: error.message,
+
+        suggestions: ['Попробуйте еще раз']    if (!validImageTypes.includes(file.type)) {
+
+      },
+
+      { status: 500 }      return NextResponse.json(      console.error('Failed to initialize Google Vision client:', error);
+
+    );
+
+  }        { 
+
+}
+
+          error: 'Неподдерживаемый тип файла. Поддерживаются только изображения: JPEG, PNG, WEBP, HEIC',      throw new Error('Google Vision API не настроен правильно');    },      },
+
+function extractBasicData(text: string) {
+
+  const data: any = {          suggestions: [
+
+    numbers: [],
+
+    dates: [],            'Используйте изображения в формате JPEG, PNG, WEBP или HEIC',    }
+
+    amounts: []
+
+  };            'Убедитесь, что файл не поврежден'
+
+  
+
+  // Числа          ]  }    scopes: ['https://www.googleapis.com/auth/cloud-platform'],      { status: 500, headers: { 'Content-Type': 'application/json' } }
+
+  const numbers = text.match(/\d+(?:[.,]\d+)*/gi) || [];
+
+  data.numbers = numbers.slice(0, 10);        },
+
+  
+
+  // Даты        { status: 400 }  
+
+  const dates = text.match(/\d{1,2}[./]\d{1,2}[./]\d{2,4}/gi) || [];
+
+  data.dates = dates.slice(0, 5);      );
+
+  
+
+  // Суммы    }  return visionClient;  });    );
+
+  const amounts = text.match(/\d+(?:[.,]\d+)*\s*(?:руб|₽|RUB)/gi) || [];
+
+  data.amounts = amounts.slice(0, 5);    
+
+  
+
+  return data;    // Validate file size (max 10MB)}
+
+}
+    const maxSize = 10 * 1024 * 1024; // 10MB
+
+    if (file.size > maxSize) {  }
+
+      return NextResponse.json(
+
+        { // Main API handler
+
+          error: 'Файл слишком большой. Максимальный размер: 10MB',
+
+          suggestions: [export async function POST(request: NextRequest) {  visionClient = new ImageAnnotatorClient({ auth });}
+
+            'Сожмите изображение',
+
+            'Используйте файл меньшего размера'  try {
+
+          ]
+
+        },    console.log('🔍 Получен запрос на распознавание счета');} catch (error) {
+
+        { status: 400 }
+
+      );    
+
+    }
+
+        // Parse form data  console.error('Error initializing Google Vision API client:', error);/**
+
+    // Convert file to buffer
+
+    const imageBuffer = Buffer.from(await file.arrayBuffer());    const formData = await request.formData();
+
+    console.log(`🖼️ Изображение загружено, размер буфера: ${imageBuffer.length} байт`);
+
+        const file = formData.get('file') as File;} * Извлекает структурированные данные из распознанного текста счета
+
+    // Initialize Google Vision client
+
+    const client = getVisionClient();    
+
+    
+
+    // Perform text detection using Google Vision API    if (!file) { * @param fullText Полный текст документа
+
+    console.log('🔍 Запускаем распознавание текста через Google Vision API...');
+
+          return NextResponse.json(
+
+    const [result] = await client.textDetection({
+
+      image: {        { error: 'Файл не найден в запросе' },export async function POST(request: NextRequest) { * @param textElements Отдельные элементы текста с координатами
+
+        content: imageBuffer
+
+      }        { status: 400 }
+
+    });
+
+          );  try { * @returns Объект с данными счета
+
+    const detections = result.textAnnotations;
+
+        }
+
+    if (!detections || detections.length === 0) {
+
+      console.log('❌ Текст не найден в изображении');        // Check if client is initialized */
+
+      return NextResponse.json(
+
+        {    console.log(`📄 Обрабатываем файл: ${file.name}, размер: ${file.size} байт, тип: ${file.type}`);
+
+          error: 'Текст не найден в изображении',
+
+          suggestions: [        if (!visionClient) {function extractInvoiceData(
+
+            'Убедитесь, что изображение содержит текст',
+
+            'Проверьте качество изображения',    // Validate file type (only images now)
+
+            'Используйте более четкое изображение',
+
+            'Убедитесь, что документ полностью в кадре'    const validImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];      console.error('Google Vision API client not initialized');  fullText: string, 
+
+          ]
+
+        },    if (!validImageTypes.includes(file.type)) {
+
+        { status: 400 }
+
+      );      return NextResponse.json(      return NextResponse.json(  textElements: Array<{text: string, confidence: number, boundingBox: any[]}>
+
+    }
+
+            { 
+
+    // Extract full text
+
+    const rawText = detections[0].description || '';          error: 'Неподдерживаемый тип файла. Поддерживаются только изображения: JPEG, PNG, WEBP, HEIC',        { error: 'Ошибка конфигурации Google Vision API' },) {
+
+    console.log(`✅ Распознан текст длиной ${rawText.length} символов`);
+
+              suggestions: [
+
+    // Basic invoice data extraction
+
+    const invoiceData = extractInvoiceData(rawText);            'Используйте изображения в формате JPEG, PNG, WEBP или HEIC',        { status: 500, headers: { 'Content-Type': 'application/json' } }  // Инициализация объекта с данными счета
+
+    
+
+    // Return successful response            'Убедитесь, что файл не поврежден'
+
+    return NextResponse.json({
+
+      success: true,          ]      );  const data: {
+
+      rawText: rawText,
+
+      extractedData: invoiceData,        },
+
+      confidence: 'high', // Google Vision typically has high confidence
+
+      method: 'google-vision'        { status: 400 }    }    invoiceNumber?: string;
+
+    });
+
+          );
+
+  } catch (error: any) {
+
+    console.error('❌ Ошибка в API распознавания счетов:', error);    }    invoiceDate?: string;
+
+    
+
+    // Handle specific Google Vision API errors    
+
+    if (error.code === 'UNAUTHENTICATED') {
+
+      return NextResponse.json(    // Validate file size (max 10MB)    // Check request type    dueDate?: string;
+
+        {
+
+          error: 'Google Vision API не настроен или недоступен',    const maxSize = 10 * 1024 * 1024; // 10MB
+
+          suggestions: [
+
+            'Проверьте настройки Google Cloud Vision API',    if (file.size > maxSize) {    if (!request.headers.get('content-type')?.includes('multipart/form-data')) {    totalAmount?: string;
+
+            'Убедитесь, что API ключи настроены правильно'
+
+          ]      return NextResponse.json(
+
+        },
+
+        { status: 500 }        {       return NextResponse.json(    totalAmountWithVAT?: string;
+
+      );
+
+    }          error: 'Файл слишком большой. Максимальный размер: 10MB',
+
+    
+
+    return NextResponse.json(          suggestions: [        {     vatAmount?: string;
+
+      {
+
+        error: 'Внутренняя ошибка сервера',            'Сожмите изображение',
+
+        details: error.message || 'Неизвестная ошибка',
+
+        suggestions: [            'Используйте файл меньшего размера'          error: 'Неверный формат запроса. Ожидается multipart/form-data',    supplier?: {
+
+          'Попробуйте еще раз',
+
+          'Используйте другое изображение',          ]
+
+          'Обратитесь к администратору если проблема повторяется'
+
+        ]        },          suggestions: ['Проверьте правильность отправки формы']      name?: string;
+
+      },
+
+      { status: 500 }        { status: 400 }
+
+    );
+
+  }      );        },      inn?: string;
+
+}
+
+    }
+
+// Basic invoice data extraction function
+
+function extractInvoiceData(text: string) {            { status: 400, headers: { 'Content-Type': 'application/json' } }      kpp?: string;
+
+  const data: any = {
+
+    numbers: [],    // Convert file to buffer
+
+    dates: [],
+
+    amounts: [],    const imageBuffer = Buffer.from(await file.arrayBuffer());      );      address?: string;
+
+    companies: []
+
+  };    console.log(`🖼️ Изображение загружено, размер буфера: ${imageBuffer.length} байт`);
+
+  
+
+  // Extract numbers (potential invoice numbers, amounts)        }    };
+
+  const numberPattern = /\d+(?:[.,]\d+)*(?:\s*(?:руб|₽|RUB|USD|\$|EUR|€))?/gi;
+
+  const numbers = text.match(numberPattern) || [];    // Initialize Google Vision client
+
+  data.numbers = numbers.slice(0, 10); // Limit to first 10
+
+      const client = getVisionClient();    customer?: {
+
+  // Extract dates
+
+  const datePattern = /\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+\d{4}/gi;    
+
+  const dates = text.match(datePattern) || [];
+
+  data.dates = dates.slice(0, 5); // Limit to first 5    // Perform text detection using Google Vision API    // Get form from request      name?: string;
+
+  
+
+  // Extract potential amounts (numbers with currency)    console.log('🔍 Запускаем распознавание текста через Google Vision API...');
+
+  const amountPattern = /\d+(?:[.,]\d+)*\s*(?:руб|₽|RUB|USD|\$|EUR|€)/gi;
+
+  const amounts = text.match(amountPattern) || [];        const formData = await request.formData();      inn?: string;
+
+  data.amounts = amounts.slice(0, 5); // Limit to first 5
+
+      const [result] = await client.textDetection({
+
+  // Extract potential company names (words in uppercase or with "ООО", "ИП", etc.)
+
+  const companyPattern = /(?:ООО|ИП|ЗАО|ОАО|ФГУП)\s+[А-ЯЁ][а-яё\s"]*[А-ЯЁа-яё"]/g;      image: {    const file = formData.get('file') as File | null;      address?: string;
+
+  const companies = text.match(companyPattern) || [];
+
+  data.companies = companies.slice(0, 3); // Limit to first 3        content: imageBuffer
+
+  
+
+  return data;      }    };
+
+}
+    });
+
+        if (!file) {    paymentInfo?: {
+
+    const detections = result.textAnnotations;
+
+          return NextResponse.json(      bankName?: string;
+
+    if (!detections || detections.length === 0) {
+
+      console.log('❌ Текст не найден в изображении');        { error: 'Файл не найден в запросе' },      bankAccount?: string;
+
+      return NextResponse.json(
+
+        {        { status: 400, headers: { 'Content-Type': 'application/json' } }      correspondentAccount?: string;
+
+          error: 'Текст не найден в изображении',
+
+          suggestions: [      );      bic?: string;
+
+            'Убедитесь, что изображение содержит текст',
+
+            'Проверьте качество изображения',    }    };
+
+            'Используйте более четкое изображение',
+
+            'Убедитесь, что документ полностью в кадре'    items?: Array<{
+
+          ]
+
+        },    // Get file extension      name?: string;
+
+        { status: 400 }
+
+      );    const fileExtension = file.name.split('.').pop()?.toLowerCase();      quantity?: string;
+
+    }
+
+              unit?: string;
+
+    // Extract full text
+
+    const rawText = detections[0].description || '';    // Get file data as ArrayBuffer      price?: string;
+
+    console.log(`✅ Распознан текст длиной ${rawText.length} символов`);
+
+        const fileBuffer = Buffer.from(await file.arrayBuffer());      amount?: string;
+
+    // Basic invoice data extraction
+
+    const invoiceData = extractInvoiceData(rawText);        }>;
+
+    
+
+    // Return successful response    // Variable to store image buffer (for PDF or image)  } = {
+
+    return NextResponse.json({
+
+      success: true,    let imageBuffer: Buffer = fileBuffer; // Default to the original buffer    supplier: {},
+
+      rawText: rawText,
+
+      extractedData: invoiceData,        customer: {},
+
+      confidence: 'high', // Google Vision typically has high confidence
+
+      method: 'google-vision'    // Process file based on extension    paymentInfo: {},
+
+    });
+
+        if (fileExtension === 'pdf') {    items: []
+
+  } catch (error: any) {
+
+    console.error('❌ Ошибка в API распознавания счетов:', error);      try {  };
+
+    
+
+    // Handle specific Google Vision API errors        // Convert PDF to image  
+
+    if (error.code === 'UNAUTHENTICATED') {
+
+      return NextResponse.json(        try {  // Поиск номера счета
+
+        {
+
+          error: 'Google Vision API не настроен или недоступен',          const convertedBuffer = await convertPdfToImage(fileBuffer);  const invoiceNumberRegex = /(?:счет|счёт|счета|invoice|№|номер)[^0-9]*([0-9\/-]+)/i;
+
+          suggestions: [
+
+            'Проверьте настройки Google Cloud Vision API',          if (convertedBuffer) {  const invoiceNumberMatch = fullText.match(invoiceNumberRegex);
+
+            'Убедитесь, что API ключи настроены правильно'
+
+          ]            imageBuffer = convertedBuffer;  if (invoiceNumberMatch && invoiceNumberMatch[1]) {
+
+        },
+
+        { status: 500 }          } else {    data.invoiceNumber = invoiceNumberMatch[1].trim();
+
+      );
+
+    }            throw new Error('Не удалось конвертировать PDF в изображение');  }
+
+    
+
+    return NextResponse.json(          }  
+
+      {
+
+        error: 'Внутренняя ошибка сервера',        } catch (conversionError: any) {  // Поиск даты счета
+
+        details: error.message || 'Неизвестная ошибка',
+
+        suggestions: [          console.error('Ошибка при конвертации PDF в изображение:', conversionError);  const dateRegex = /(?:от|date)[^0-9]*(\d{1,2}[.,-\/]\d{1,2}[.,-\/]\d{2,4}|\d{1,2}\s+[а-яА-Яa-zA-Z]+\s+\d{4})/i;
+
+          'Попробуйте еще раз',
+
+          'Используйте другое изображение',          return NextResponse.json(  const dateMatch = fullText.match(dateRegex);
+
+          'Обратитесь к администратору если проблема повторяется'
+
+        ]            {   if (dateMatch && dateMatch[1]) {
+
+      },
+
+      { status: 500 }              error: 'Ошибка при обработке PDF документа',     data.invoiceDate = dateMatch[1].trim();
+
+    );
+
+  }              details: conversionError.message || 'Неизвестная ошибка',  }
+
+}
 
               suggestions: [  
 
-                'Попробуйте изображение лучшего качества',  // Поиск суммы
+// Basic invoice data extraction function
 
-                'Убедитесь, что PDF документ не поврежден',  const totalAmountRegex = /(?:итого|всего|total|сумма|sum)[^0-9]*(\d[\d\s,.]*\d)/i;
+function extractInvoiceData(text: string) {                'Попробуйте изображение лучшего качества',  // Поиск суммы
 
-                'Попробуйте загрузить документ в другом формате (JPG, PNG)'  const totalAmountMatch = fullText.match(totalAmountRegex);
+  const data: any = {
 
-              ]  if (totalAmountMatch && totalAmountMatch[1]) {
+    numbers: [],                'Убедитесь, что PDF документ не поврежден',  const totalAmountRegex = /(?:итого|всего|total|сумма|sum)[^0-9]*(\d[\d\s,.]*\d)/i;
 
-            },    data.totalAmount = totalAmountMatch[1].trim().replace(/\s/g, '');
+    dates: [],
 
-            { status: 500, headers: { 'Content-Type': 'application/json' } }  }
+    amounts: [],                'Попробуйте загрузить документ в другом формате (JPG, PNG)'  const totalAmountMatch = fullText.match(totalAmountRegex);
 
-          );  
+    companies: []
 
-        }  // Поиск НДС
+  };              ]  if (totalAmountMatch && totalAmountMatch[1]) {
 
-      } catch (pdfError) {  const vatRegex = /(?:ндс|vat)[^0-9]*(\d[\d\s,.]*\d)/i;
+  
 
-        console.error('Общая ошибка при обработке PDF:', pdfError);  const vatMatch = fullText.match(vatRegex);
+  // Extract numbers (potential invoice numbers, amounts)            },    data.totalAmount = totalAmountMatch[1].trim().replace(/\s/g, '');
 
-        return NextResponse.json(  if (vatMatch && vatMatch[1]) {
+  const numberPattern = /\d+(?:[.,]\d+)*(?:\s*(?:руб|₽|RUB|USD|\$|EUR|€))?/gi;
 
-          {     data.vatAmount = vatMatch[1].trim().replace(/\s/g, '');
+  const numbers = text.match(numberPattern) || [];            { status: 500, headers: { 'Content-Type': 'application/json' } }  }
 
-            error: 'Ошибка при обработке PDF документа',  }
+  data.numbers = numbers.slice(0, 10); // Limit to first 10
 
-            suggestions: [  
+            );  
 
-              'Попробуйте изображение лучшего качества',  // Поиск ИНН поставщика
+  // Extract dates
 
+  const datePattern = /\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+\d{4}/gi;        }  // Поиск НДС
+
+  const dates = text.match(datePattern) || [];
+
+  data.dates = dates.slice(0, 5); // Limit to first 5      } catch (pdfError) {  const vatRegex = /(?:ндс|vat)[^0-9]*(\d[\d\s,.]*\d)/i;
+
+  
+
+  // Extract potential amounts (numbers with currency)        console.error('Общая ошибка при обработке PDF:', pdfError);  const vatMatch = fullText.match(vatRegex);
+
+  const amountPattern = /\d+(?:[.,]\d+)*\s*(?:руб|₽|RUB|USD|\$|EUR|€)/gi;
+
+  const amounts = text.match(amountPattern) || [];        return NextResponse.json(  if (vatMatch && vatMatch[1]) {
+
+  data.amounts = amounts.slice(0, 5); // Limit to first 5
+
+            {     data.vatAmount = vatMatch[1].trim().replace(/\s/g, '');
+
+  // Extract potential company names (words in uppercase or with "ООО", "ИП", etc.)
+
+  const companyPattern = /(?:ООО|ИП|ЗАО|ОАО|ФГУП)\s+[А-ЯЁ][а-яё\s"]*[А-ЯЁа-яё"]/g;            error: 'Ошибка при обработке PDF документа',  }
+
+  const companies = text.match(companyPattern) || [];
+
+  data.companies = companies.slice(0, 3); // Limit to first 3            suggestions: [  
+
+  
+
+  return data;              'Попробуйте изображение лучшего качества',  // Поиск ИНН поставщика
+
+}
               'Убедитесь, что PDF документ не поврежден',  const supplierInnRegex = /(?:инн|inn)[^0-9]*(\d{10,12})/i;
 
               'Попробуйте загрузить документ в другом формате (JPG, PNG)'  const supplierInnMatch = fullText.match(supplierInnRegex);

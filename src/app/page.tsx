@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/app-layout';
 import ProjectCard from '@/components/project-card';
+import PyMuPDFConverter from '@/components/PyMuPDFConverter';
+import SmartInvoiceAnalyzer from '@/components/SmartInvoiceAnalyzer';
 import { Plus, Search, CalendarDays, Filter, ArrowUpDown, FileText, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { getAllProjects } from '@/services/projects';
@@ -16,6 +18,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [projectStats, setProjectStats] = useState<Record<string, { tasksCount: number; tasksCompleted: number }>>({});
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'projects' | 'pdf-converter' | 'smart-invoice'>('projects');
   
   // Загрузка проектов
   useEffect(() => {
@@ -71,7 +74,7 @@ export default function HomePage() {
     <AppLayout>
       <div className="p-4">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Проекты</h1>
+          <h1 className="text-2xl font-bold text-gray-900">CRM Панель</h1>
           
           <Link
             href="/projects/new"
@@ -81,21 +84,68 @@ export default function HomePage() {
             Новый проект
           </Link>
         </div>
-        
+
+        {/* Вкладки */}
         <div className="mb-6">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-              <Search size={18} className="text-gray-400" />
-            </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5"
-              placeholder="Поиск проектов..."
-            />
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('projects')}
+                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'projects'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                📋 Проекты
+              </button>
+              <button
+                onClick={() => setActiveTab('smart-invoice')}
+                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'smart-invoice'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                🧠 Анализ счетов
+              </button>
+              <button
+                onClick={() => setActiveTab('pdf-converter')}
+                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'pdf-converter'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                🖼️ PDF Конвертер
+              </button>
+              <Link
+                href="/parser-test"
+                className="whitespace-nowrap py-2 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm"
+              >
+                🧪 Тест парсера
+              </Link>
+            </nav>
           </div>
         </div>
+        
+        {/* Контент в зависимости от активной вкладки */}
+        {activeTab === 'projects' ? (
+          <>
+            <div className="mb-6">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <Search size={18} className="text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5"
+                  placeholder="Поиск проектов..."
+                />
+              </div>
+            </div>
         
         <div className="mb-6 flex flex-wrap gap-2">
           <button
@@ -180,6 +230,12 @@ export default function HomePage() {
               />
             ))}
           </div>
+            )}
+          </>
+        ) : activeTab === 'smart-invoice' ? (
+          <SmartInvoiceAnalyzer />
+        ) : (
+          <PyMuPDFConverter />
         )}
       </div>
     </AppLayout>

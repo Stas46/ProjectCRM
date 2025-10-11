@@ -48,21 +48,100 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     fs.writeFileSync(filePath, buffer);
     
+    let finalImagePath = filePath;
+    let conversionInfo = null;
+
+    // Если это PDF - конвертируем в изображение
+    if (fileType === 'application/pdf') {
+      console.log('� Обнаружен PDF файл - начинаем конвертацию...');
+      
+      try {
+        console.log('🔄 Конвертируем PDF в PNG с помощью pdf.js...');
+        
+        // Читаем PDF файл
+        const pdfData = new Uint8Array(fs.readFileSync(filePath));
+        
+        // Загружаем PDF документ
+        const pdfDocument = await pdfjsLib.getDocument({
+          data: pdfData,
+          useSystemFonts: true
+        }).promise;
+        
+        // Получаем первую страницу
+        const page = await pdfDocument.getPage(1);
+        
+        // Настраиваем масштаб для высокого качества
+        const scale = 2.0;
+        const viewport = page.getViewport({ scale });
+        
+        // Создаем canvas
+        const canvas = createCanvas(viewport.width, viewport.height);
+        const context = canvas.getContext('2d');
+        
+        // Рендерим страницу
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+        
+        await page.render(renderContext).promise;
+        
+        // Сохраняем как PNG
+        const convertedFileName = `converted-${uuidv4()}.png`;
+        const convertedPath = path.join(tempDir, convertedFileName);
+        
+        const buffer = canvas.toBuffer('image/png');
+        fs.writeFileSync(convertedPath, buffer);
+        
+        finalImagePath = convertedPath;
+        conversionInfo = {
+          originalFormat: 'PDF',
+          convertedTo: 'PNG',
+          convertedPath: convertedPath,
+          pagesConverted: 1,
+          dimensions: `${viewport.width}x${viewport.height}`,
+          scale: scale
+        };
+        
+        console.log('✅ PDF успешно конвертирован с помощью pdf.js:', convertedPath);
+      } catch (pdfError: any) {
+        console.error('❌ Ошибка конвертации PDF:', pdfError);
+        // Продолжаем с оригинальным файлом
+        console.log('⚠️ Попробуем обработать PDF напрямую...');
+      }
+    }
+    
     try {
+      console.log('�🔍 Отправляем файл в Google Vision API...');
+      console.log('📄 Тип файла:', fileType);
+      console.log('📏 Размер файла:', file.size, 'байт');
+      console.log('📁 Путь к файлу:', finalImagePath);
+      console.log('🔄 Конвертация:', conversionInfo ? 'Выполнена' : 'Не требуется');
+      
       // Инициализируем клиент Google Cloud Vision API
       const client = new ImageAnnotatorClient();
       
       // Выполняем несколько типов анализа для демонстрации возможностей
-      const [textDetection] = await client.textDetection(filePath);
-      const [documentTextDetection] = await client.documentTextDetection(filePath);
-      const [imageProperties] = await client.imageProperties(filePath);
-      const [labelDetection] = await client.labelDetection(filePath);
+      console.log('🔤 Выполняем text detection...');
+      const [textDetection] = await client.textDetection(finalImagePath);
+      console.log('📄 Выполняем document text detection...');
+      const [documentTextDetection] = await client.documentTextDetection(finalImagePath);
+      console.log('🎨 Выполняем image properties...');
+      const [imageProperties] = await client.imageProperties(finalImagePath);
+      console.log('🏷️ Выполняем label detection...');
+      const [labelDetection] = await client.labelDetection(finalImagePath);
+      console.log('🔍 Выполняем logo detection...');
+      const [logoDetection] = await client.logoDetection(finalImagePath);
       
-      // Опционально можно добавить обнаружение логотипов
-      const [logoDetection] = await client.logoDetection(filePath);
+      console.log('✅ Все API вызовы выполнены успешно');
+      console.log('📝 Найден текст (textDetection):', textDetection.fullTextAnnotation?.text ? 'ДА' : 'НЕТ');
+      console.log('📄 Найден текст (documentTextDetection):', documentTextDetection.fullTextAnnotation?.text ? 'ДА' : 'НЕТ');
       
-      // Удаляем временный файл
+      // Удаляем временные файлы
       fs.unlinkSync(filePath);
+      if (conversionInfo && finalImagePath !== filePath && fs.existsSync(finalImagePath)) {
+        fs.unlinkSync(finalImagePath);
+      }
       
       // Формируем результат
       return NextResponse.json({
@@ -70,6 +149,7 @@ export async function POST(request: NextRequest) {
         fileName: file.name,
         fileType: fileType,
         fileSize: file.size,
+        conversionInfo: conversionInfo,
         results: {
           // Обнаружение текста (лучше для коротких текстов, вывесок и т.д.)
           textDetection: {
@@ -126,9 +206,12 @@ export async function POST(request: NextRequest) {
       });
       
     } catch (error: any) {
-      // Если временный файл все еще существует, удаляем его
+      // Если временные файлы все еще существуют, удаляем их
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+      }
+      if (conversionInfo && finalImagePath !== filePath && fs.existsSync(finalImagePath)) {
+        fs.unlinkSync(finalImagePath);
       }
       
       console.error('Ошибка при обработке файла в Google Cloud Vision API:', error);

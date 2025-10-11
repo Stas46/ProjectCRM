@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Получение IAM-токена Yandex Cloud</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background: #f7fafc;
+        }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .step { 
+            background: #f8f9fa; 
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid #4299e1;
+        }
+        .method { 
+            background: #e6fffa; 
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid #38b2ac;
+        }
+        .command { 
+            background: #2d3748; 
+            color: #e2e8f0; 
+            padding: 15px; 
+            border-radius: 6px; 
+            font-family: 'Consolas', 'Monaco', monospace;
+            overflow-x: auto;
+        }
+        .warning { 
+            background: #fef5e7; 
+            border-left: 4px solid #f6ad55; 
+            padding: 15px; 
+            margin: 10px 0;
+        }
+        .success { 
+            background: #f0fff4; 
+            border-left: 4px solid #48bb78; 
+            padding: 15px; 
+            margin: 10px 0;
+        }
+        .btn {
+            background: #4299e1;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .btn:hover { background: #3182ce; }
+        .oauth-section {
+            background: #fff5f5;
+            border: 2px solid #fc8181;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px;
+            font-family: monospace;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔑 Получение IAM-токена для Yandex Cloud Vision</h1>
+        
+        <div class="warning">
+            <strong>⚠️ Важно:</strong> IAM-токен действует только 12 часов. Для долгосрочного использования рекомендуется API-ключ.
+        </div>
+
+        <div class="method">
+            <h2>🌐 Метод 1: Через веб-интерфейс (самый простой)</h2>
+            
+            <div class="step">
+                <h3>Шаг 1: Получите OAuth-токен</h3>
+                <p>Нажмите на кнопку ниже, чтобы получить OAuth-токен:</p>
+                <button class="btn" onclick="getOAuthToken()">🔗 Получить OAuth-токен</button>
+                <p><small>Это откроет новую вкладку. После авторизации скопируйте полученный токен.</small></p>
+                
+                <label for="oauthToken">Вставьте OAuth-токен сюда:</label>
+                <textarea id="oauthToken" placeholder="Вставьте OAuth-токен здесь..."></textarea>
+            </div>
+
+            <div class="step">
+                <h3>Шаг 2: Получите IAM-токен</h3>
+                <button class="btn" onclick="getIAMToken()">🎯 Получить IAM-токен</button>
+                <div id="iamResult" style="margin-top: 15px;"></div>
+            </div>
+        </div>
+
+        <div class="method">
+            <h2>💻 Метод 2: Через Yandex Cloud CLI</h2>
+            
+            <div class="step">
+                <h3>Установка CLI</h3>
+                <p>Для Windows PowerShell:</p>
+                <div class="command">iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')</div>
+            </div>
+
+            <div class="step">
+                <h3>Инициализация и получение токена</h3>
+                <div class="command">
+# Инициализация (один раз)
+yc init
+
+# Получение IAM-токена
+yc iam create-token
+                </div>
+            </div>
+        </div>
+
+        <div class="success">
+            <h2>✅ После получения токена</h2>
+            <p>Добавьте в файл <code>.env.local</code>:</p>
+            <div class="command">
+# IAM токен (обновлять каждые 12 часов)
+YANDEX_IAM_TOKEN=t1.9eu...ваш_iam_токен...
+YANDEX_CLOUD_FOLDER_ID=b1g...ваш_folder_id...
+            </div>
+        </div>
+
+        <div class="oauth-section">
+            <h2>🎯 Рекомендация: Используйте API-ключ вместо IAM-токена!</h2>
+            <p>API-ключ не истекает и проще в использовании:</p>
+            <ol>
+                <li>Создайте сервисный аккаунт с ролью <code>ai.vision.user</code></li>
+                <li>Создайте для него API-ключ</li>
+                <li>Добавьте в <code>.env.local</code>:</li>
+            </ol>
+            <div class="command">
+YANDEX_VISION_API_KEY=AQVN...ваш_api_ключ...
+YANDEX_CLOUD_FOLDER_ID=b1g...ваш_folder_id...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getOAuthToken() {
+            window.open('https://oauth.yandex.ru/authorize?response_type=token&client_id=1a6990aa636648e9b2ef855fa7bec2fb', '_blank');
+        }
+
+        async function getIAMToken() {
+            const oauthToken = document.getElementById('oauthToken').value.trim();
+            const resultDiv = document.getElementById('iamResult');
+            
+            if (!oauthToken) {
+                resultDiv.innerHTML = '<div style="color: red;">❌ Введите OAuth-токен</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div style="color: blue;">🔄 Получаем IAM-токен через наш API...</div>';
+
+            try {
+                const response = await fetch('/api/get-iam-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        oauthToken: oauthToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div style="color: green;">✅ IAM-токен получен успешно!</div>
+                        <div style="background: #2d3748; color: #e2e8f0; padding: 10px; border-radius: 4px; margin: 10px 0; font-family: monospace; word-break: break-all;">
+                            ${data.iamToken}
+                        </div>
+                        <div style="color: orange;">⚠️ Токен действует до: ${new Date(data.expiresAt).toLocaleString('ru-RU')}</div>
+                        <div style="margin-top: 10px;">
+                            <button class="btn" onclick="copyToClipboard('${data.iamToken}')">📋 Скопировать токен</button>
+                            <button class="btn" onclick="addToEnvFile('${data.iamToken}')">⚙️ Показать настройку .env.local</button>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div style="color: red;">❌ Ошибка: ${data.error}<br><small>${data.details || ''}</small></div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div style="color: red;">❌ Ошибка сети: ${error.message}</div>`;
+            }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ IAM-токен скопирован в буфер обмена!');
+            });
+        }
+
+        function addToEnvFile(iamToken) {
+            const envConfig = `
+# Добавьте эти строки в файл .env.local:
+
+YANDEX_IAM_TOKEN=${iamToken}
+YANDEX_CLOUD_FOLDER_ID=ajeqqov5lheces6lehjn
+
+# После добавления перезапустите сервер: npm run dev
+            `;
+            
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+                background: rgba(0,0,0,0.8); z-index: 1000; 
+                display: flex; align-items: center; justify-content: center;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: white; padding: 30px; border-radius: 8px; max-width: 600px; width: 90%;">
+                    <h3>⚙️ Настройка .env.local</h3>
+                    <textarea readonly style="width: 100%; height: 150px; font-family: monospace;">${envConfig}</textarea>
+                    <div style="margin-top: 15px;">
+                        <button class="btn" onclick="copyToClipboard(\`${envConfig}\`)">📋 Скопировать конфигурацию</button>
+                        <button class="btn" onclick="document.body.removeChild(this.closest('div').closest('div'))" style="background: #666;">✖️ Закрыть</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+    </script>
+</body>
+</html>

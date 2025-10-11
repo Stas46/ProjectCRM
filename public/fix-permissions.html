@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройка прав доступа для Yandex Vision</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .step { background: #f0f8ff; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #4299e1; }
+        .important { background: #fff5f5; border-left: 4px solid #fc8181; padding: 20px; margin: 15px 0; border-radius: 8px; }
+        .success { background: #f0fff4; border-left: 4px solid #48bb78; padding: 20px; margin: 15px 0; border-radius: 8px; }
+        .warning { background: #fffbf0; border-left: 4px solid #f6ad55; padding: 20px; margin: 15px 0; border-radius: 8px; }
+        .code { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 6px; font-family: monospace; margin: 10px 0; }
+        .btn { background: #4299e1; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin: 10px 5px; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #3182ce; }
+        .btn-green { background: #48bb78; }
+        .btn-green:hover { background: #38a169; }
+        .btn-red { background: #fc8181; }
+        .btn-red:hover { background: #f56565; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Настройка прав доступа для Yandex Vision</h1>
+        
+        <div class="important">
+            <h3>🚨 Проблема:</h3>
+            <p>Ошибка <strong>403 Permission denied</strong> означает, что сервисному аккаунту <code>vision-ocr-service</code> нужны дополнительные права для доступа к каталогу.</p>
+            <p><strong>ID сервисного аккаунта:</strong> <code>ajeh6lbokias41tbjk1m</code></p>
+        </div>
+
+        <div class="step">
+            <h2>🌐 Шаг 1: Откройте настройки каталога</h2>
+            <a href="https://console.cloud.yandex.ru/folders/b1g...ваш_folder_id.../access" target="_blank" class="btn">🔗 Права доступа к каталогу</a>
+            <p>Или вручную:</p>
+            <ol>
+                <li>Откройте <a href="https://console.cloud.yandex.ru/" target="_blank">консоль Yandex Cloud</a></li>
+                <li>Выберите каталог <strong>default</strong></li>
+                <li>Перейдите в <strong>"Права доступа"</strong></li>
+            </ol>
+        </div>
+
+        <div class="step">
+            <h2>👤 Шаг 2: Добавьте сервисный аккаунт</h2>
+            <ol>
+                <li>Нажмите <strong>"Назначить роли"</strong></li>
+                <li>В поле поиска введите: <code>vision-ocr-service</code></li>
+                <li>Выберите сервисный аккаунт из списка</li>
+                <li>Добавьте следующие роли:</li>
+            </ol>
+            
+            <div class="warning">
+                <h3>🎯 Необходимые роли:</h3>
+                <ul>
+                    <li><strong><code>ai.vision.user</code></strong> - для использования Vision API</li>
+                    <li><strong><code>resource-manager.folder.viewer</code></strong> - для доступа к каталогу</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="step">
+            <h2>🔑 Шаг 3: Проверьте роли</h2>
+            <p>Убедитесь, что у сервисного аккаунта есть роли:</p>
+            <div class="code">
+✅ ai.vision.user (уже есть)
+➕ resource-manager.folder.viewer (нужно добавить)
+            </div>
+        </div>
+
+        <div class="success">
+            <h2>🚀 Альтернативный способ (если проблема сохраняется)</h2>
+            <p>Попробуем использовать <strong>личный аккаунт</strong> вместо сервисного:</p>
+            
+            <h3>📋 Создание персонального API ключа:</h3>
+            <ol>
+                <li>Перейдите в <strong>"Биллинг"</strong> в консоли Yandex Cloud</li>
+                <li>Убедитесь, что у вас есть активный биллинговый аккаунт</li>
+                <li>Вернитесь в главное меню</li>
+                <li>Перейдите в <strong>"API ключи"</strong> (в разделе пользователя, не сервисного аккаунта)</li>
+                <li>Создайте новый API ключ для своего личного аккаунта</li>
+            </ol>
+            
+            <div style="margin-top: 20px;">
+                <a href="https://console.cloud.yandex.ru/iam/api-keys" target="_blank" class="btn btn-green">🔑 Создать персональный API ключ</a>
+                <a href="http://localhost:3004/test-center" target="_blank" class="btn">🧪 Перейти к тестированию</a>
+            </div>
+        </div>
+
+        <div class="warning">
+            <h3>🔄 После настройки прав:</h3>
+            <ol>
+                <li>Подождите 1-2 минуты (обновление прав может занять время)</li>
+                <li>Перейдите к тестированию Yandex Vision</li>
+                <li>Если проблема сохраняется - используйте персональный API ключ</li>
+            </ol>
+        </div>
+
+        <div class="important">
+            <h3>📊 Текущая конфигурация:</h3>
+            <div class="code">
+Сервисный аккаунт: vision-ocr-service (ajeh6lbokias41tbjk1m)
+API ключ: aje79of9fr7sdjd2sfcq
+Folder ID: b1g...ваш_folder_id...
+Роль Vision: ✅ ai.vision.user
+Роль каталога: ❓ нужно проверить resource-manager.folder.viewer
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <button class="btn btn-red" onclick="testConfiguration()">🧪 Протестировать конфигурацию</button>
+        </div>
+
+        <div id="testResult" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        async function testConfiguration() {
+            const resultDiv = document.getElementById('testResult');
+            resultDiv.innerHTML = '<div style="color: blue;">🔄 Тестируем конфигурацию Yandex Vision...</div>';
+
+            try {
+                // Простой тест - пытаемся загрузить изображение размером 1x1 пиксель
+                const canvas = document.createElement('canvas');
+                canvas.width = 1;
+                canvas.height = 1;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, 1, 1);
+                
+                canvas.toBlob(async (blob) => {
+                    const formData = new FormData();
+                    formData.append('file', blob, 'test.png');
+                    
+                    try {
+                        const response = await fetch('/api/yandex-vision-test', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.ocrResults && result.ocrResults.success) {
+                            resultDiv.innerHTML = `
+                                <div style="background: #f0fff4; padding: 15px; border-radius: 8px; border-left: 4px solid #48bb78;">
+                                    <h3>✅ Успех!</h3>
+                                    <p>Yandex Vision API работает корректно!</p>
+                                    <p>Теперь можете загружать реальные документы для распознавания.</p>
+                                </div>
+                            `;
+                        } else {
+                            const errorMsg = result.ocrResults?.errorMessage || 'Неизвестная ошибка';
+                            resultDiv.innerHTML = `
+                                <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #fc8181;">
+                                    <h3>❌ Ошибка</h3>
+                                    <p><strong>Проблема:</strong> ${errorMsg}</p>
+                                    <p><strong>Решение:</strong> Добавьте роль resource-manager.folder.viewer или используйте персональный API ключ.</p>
+                                </div>
+                            `;
+                        }
+                    } catch (error) {
+                        resultDiv.innerHTML = `
+                            <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #fc8181;">
+                                <h3>❌ Ошибка теста</h3>
+                                <p>${error.message}</p>
+                            </div>
+                        `;
+                    }
+                }, 'image/png');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #fc8181;">
+                        <h3>❌ Ошибка создания тестового изображения</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
