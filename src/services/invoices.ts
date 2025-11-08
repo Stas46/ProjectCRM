@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Invoice, NewInvoice, UpdateInvoice } from '@/types/invoice';
+import { ExpenseSummary, expenseCategoryMap } from '@/types/supplier';
 
 // Получение всех счетов
 export async function getAllInvoices(): Promise<Invoice[]> {
@@ -153,5 +154,55 @@ export async function getProjectInvoicesTotal(projectId: string): Promise<{ tota
     console.error(`Исключение при получении суммы счетов для проекта ${projectId}:`, err);
     return { total: 0, paid: 0 };
   }
-}// Алиас для getInvoicesByProjectId
+}
+
+// Получение сводки затрат по категориям для проекта
+export async function getProjectExpensesSummary(projectId: string): Promise<ExpenseSummary[]> {
+  try {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('amount, category')
+      .eq('project_id', projectId);
+
+    if (error) {
+      console.error(`Ошибка при получении сводки затрат для проекта ${projectId}:`, error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Группируем по категориям
+    const categoryTotals = data.reduce((acc, invoice) => {
+      const category = invoice.category || 'additional';
+      if (!acc[category]) {
+        acc[category] = { total: 0, count: 0 };
+      }
+      acc[category].total += invoice.amount;
+      acc[category].count += 1;
+      return acc;
+    }, {} as Record<string, { total: number; count: number }>);
+
+    // Вычисляем общую сумму
+    const totalAmount = Object.values(categoryTotals).reduce((sum, cat) => sum + cat.total, 0);
+
+    // Формируем результат
+    const summary: ExpenseSummary[] = Object.entries(categoryTotals).map(([category, data]) => ({
+      category,
+      categoryName: expenseCategoryMap[category as keyof typeof expenseCategoryMap] || category,
+      total: data.total,
+      count: data.count,
+      percentage: totalAmount > 0 ? (data.total / totalAmount) * 100 : 0
+    }));
+
+    // Сортируем по убыванию суммы
+    return summary.sort((a, b) => b.total - a.total);
+  } catch (err) {
+    console.error(`Исключение при получении сводки затрат для проекта ${projectId}:`, err);
+    return [];
+  }
+}
+
+// Алиас для getInvoicesByProjectId
 export const getProjectInvoices = getInvoicesByProjectId;

@@ -1,0 +1,9 @@
+{
+  "invoice_number": "00000009915",
+  "invoice_date": "2024-11-07",
+  "total_amount": null,
+  "vat_amount": null,
+  "supplier_name": "ООО \"Ал-Профи\"",
+  "supplier_inn": "7839120887",
+  "note": "OCR не распознал итоговую сумму (PDF обрезан?)"
+}

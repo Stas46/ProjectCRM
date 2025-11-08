@@ -11,18 +11,11 @@ export interface InvoiceCardProps {
   number: string;
   issueDate: string;
   amount: number;
-  status: 'draft' | 'to_pay' | 'paid' | 'rejected';
   category: string;
   hasAttachment: boolean;
   onClick?: (id: string) => void;
 }
 
-const statusMap = {
-  draft: { label: 'Черновик', color: 'bg-gray-100 text-gray-800' },
-  to_pay: { label: 'К оплате', color: 'bg-yellow-100 text-yellow-800' },
-  paid: { label: 'Оплачен', color: 'bg-green-100 text-green-800' },
-  rejected: { label: 'Отклонен', color: 'bg-red-100 text-red-800' },
-};
 
 const InvoiceCard = ({
   id,
@@ -32,12 +25,10 @@ const InvoiceCard = ({
   number,
   issueDate,
   amount,
-  status,
   category,
   hasAttachment,
   onClick,
 }: InvoiceCardProps) => {
-  const statusInfo = statusMap[status];
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
@@ -60,8 +51,8 @@ const InvoiceCard = ({
             <h3 className="font-medium text-gray-900">{vendor}</h3>
             <p className="text-sm text-gray-500">№ {number}</p>
           </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full ${statusInfo.color}`}>
-            {statusInfo.label}
+          <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">
+            {category}
           </span>
         </div>
         
@@ -112,43 +103,20 @@ const InvoiceCard = ({
         </div>
         
         <div className="flex space-x-2">
-          {status === 'draft' && (
-            <>
-              <button
-                type="button"
-                className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                title="Редактировать"
-              >
-                <FilePenLine size={18} />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded"
-                title="Удалить"
-              >
-                <Trash2 size={18} />
-              </button>
-            </>
-          )}
-          
-          {status === 'to_pay' && (
-            <>
-              <button
-                type="button"
-                className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-gray-100 rounded"
-                title="Подтвердить оплату"
-              >
-                <Check size={18} />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded"
-                title="Отклонить"
-              >
-                <X size={18} />
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+            title="Редактировать"
+          >
+            <FilePenLine size={18} />
+          </button>
+          <button
+            type="button"
+            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded"
+            title="Удалить"
+          >
+            <Trash2 size={18} />
+          </button>
         </div>
       </div>
     </div>

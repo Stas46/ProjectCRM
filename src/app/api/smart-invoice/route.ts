@@ -1,565 +1,598 @@
+// ============================================
+// API Endpoint для распознавания счетов
+// Путь: src/app/api/smart-invoice/route.ts
+// ============================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
+import { createClient } from '@supabase/supabase-js';
+import type { Invoice, CreateInvoice, ParsedInvoiceData } from '@/types/invoice';
+import type { Supplier, CreateSupplier } from '@/types/supplier';
+import { v4 as uuidv4 } from 'uuid';
 
 const execAsync = promisify(exec);
 
-// Инициализация Google Vision
+// ============================================
+// Конфигурация
+// ============================================
+
+// Google Vision API
 const vision = new ImageAnnotatorClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
 });
 
+// Supabase с service_role ключом для записи
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// ============================================
+// Функция: Получить или создать поставщика
+// ============================================
+async function getOrCreateSupplier(
+  name: string, 
+  inn: string | null
+): Promise<string | null> {
+  if (!name || name === 'Неизвестный поставщик') {
+    return null;
+  }
+  
+  console.log(`🏢 Проверяем поставщика: ${name} (ИНН: ${inn})`);
+  
+  try {
+    // Ищем по ИНН (если есть)
+    if (inn) {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('inn', inn)
+        .single();
+      
+      if (data && !error) {
+        console.log(`✅ Найден по ИНН: ${data.id}`);
+        return data.id;
+      }
+    }
+    
+    // Ищем по имени
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('id')
+      .eq('name', name)
+      .single();
+    
+    if (data && !error) {
+      console.log(`✅ Найден по имени: ${data.id}`);
+      return data.id;
+    }
+    
+    // Создаем нового поставщика
+    const newSupplier: CreateSupplier = {
+      name,
+      inn: inn || undefined,
+    };
+    
+    const { data: created, error: createError } = await supabase
+      .from('suppliers')
+      .insert(newSupplier)
+      .select('id')
+      .single();
+    
+    if (createError) {
+      console.error('❌ Ошибка создания поставщика:', createError);
+      return null;
+    }
+    
+    console.log(`✅ Создан новый поставщик: ${created.id}`);
+    return created.id;
+    
+  } catch (error) {
+    console.error('❌ Ошибка в getOrCreateSupplier:', error);
+    return null;
+  }
+}
+
+// ============================================
+// Функция: Загрузка файла в Storage
+// ============================================
+async function uploadFileToStorage(file: File): Promise<string | null> {
+  try {
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    
+    // Excel файлы не загружаем в Storage (не поддерживаются)
+    if (fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm') {
+      console.log('📊 Excel файл - пропускаем загрузку в Storage');
+      return null; // Вернем null, но продолжим обработку
+    }
+    
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `invoices/${fileName}`;
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    const { data, error } = await supabase.storage
+      .from('invoice-files')
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: false,
+      });
+    
+    if (error) {
+      console.error('❌ Ошибка загрузки файла в Storage:', error);
+      
+      // Специальное сообщение для отсутствующего bucket
+      if (error.message?.includes('Bucket not found') || (error as any).statusCode === '404') {
+        throw new Error('Bucket "invoice-files" не найден в Supabase Storage. Проверьте настройки Storage');
+      }
+      
+      return null;
+    }
+    
+    // Получаем публичный URL
+    const { data: urlData } = supabase.storage
+      .from('invoice-files')
+      .getPublicUrl(filePath);
+    
+    console.log(`✅ Файл загружен: ${urlData.publicUrl}`);
+    return urlData.publicUrl;
+    
+  } catch (error) {
+    console.error('❌ Ошибка uploadFileToStorage:', error);
+    throw error; // Пробрасываем ошибку дальше
+  }
+}
+
+// ============================================
+// Функция: Конвертация PDF в изображение
+// ============================================
+// ============================================
+// Функция: Конвертация PDF в изображения (все страницы)
+// ============================================
+async function convertPdfToImages(pdfBuffer: Buffer): Promise<any[]> {
+  const tempDir = path.join(process.cwd(), 'temp');
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const tempId = uuidv4();
+  const tempPdfPath = path.join(tempDir, `${tempId}.pdf`);
+  
+  try {
+    // Сохраняем PDF во временный файл
+    await fs.writeFile(tempPdfPath, pdfBuffer);
+    console.log(`💾 Временный PDF: ${tempPdfPath}`);
+    
+    // Путь к Python скрипту
+    const scriptPath = path.join(process.cwd(), 'python-scripts', 'pdf_to_png.py');
+    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    
+    // Запускаем Python скрипт
+    const result = await runPdfToPngScript(pythonExecutable, scriptPath, tempPdfPath, 200);
+    
+    // Удаляем временный файл
+    try {
+      await fs.unlink(tempPdfPath);
+    } catch (error) {
+      console.warn('⚠️ Не удалось удалить временный файл:', error);
+    }
+    
+    if (!result.success || !result.images || result.images.length === 0) {
+      throw new Error(result.error || 'Не удалось конвертировать PDF');
+    }
+
+    console.log(`📄 PDF содержит ${result.images.length} страниц(ы)`);
+    return result.images;
+    
+  } catch (error) {
+    console.error('❌ Ошибка конвертации PDF:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// Функция: Конвертация PDF в изображение (первая страница - deprecated)
+// ============================================
+async function convertPdfToImage(pdfBuffer: Buffer): Promise<Buffer> {
+  const tempDir = path.join(process.cwd(), 'temp');
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const tempId = uuidv4();
+  const tempPdfPath = path.join(tempDir, `${tempId}.pdf`);
+  
+  try {
+    // Сохраняем PDF во временный файл
+    await fs.writeFile(tempPdfPath, pdfBuffer);
+    console.log(`💾 Временный PDF: ${tempPdfPath}`);
+    
+    // Путь к Python скрипту
+    const scriptPath = path.join(process.cwd(), 'python-scripts', 'pdf_to_png.py');
+    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    
+    // Запускаем Python скрипт
+    const result = await runPdfToPngScript(pythonExecutable, scriptPath, tempPdfPath, 200);
+    
+    // Удаляем временный файл
+    try {
+      await fs.unlink(tempPdfPath);
+    } catch (error) {
+      console.warn('⚠️ Не удалось удалить временный файл:', error);
+    }
+    
+    if (!result.success || !result.images || result.images.length === 0) {
+      throw new Error(result.error || 'Не удалось конвертировать PDF');
+    }
+
+    console.log(`📄 PDF содержит ${result.images.length} страниц(ы)`);
+    
+    // Если несколько страниц - объединяем их вертикально или берем все для OCR
+    // Для простоты - возвращаем первую страницу, а OCR запустим на всех
+    const firstPage = result.images[0];
+    const imageBuffer = Buffer.from(firstPage.base64, 'base64');
+    
+    // Сохраняем все страницы для использования в OCR (если нужно)
+    // TODO: В будущем можно обрабатывать все страницы через OCR отдельно
+    
+    console.log(`✅ PDF конвертирован в изображение (${imageBuffer.length} байт)`);
+    return imageBuffer;
+    
+  } catch (error) {
+    console.error('❌ Ошибка конвертации PDF:', error);
+    throw error;
+  }
+}
+
+function runPdfToPngScript(pythonPath: string, scriptPath: string, pdfPath: string, dpi: number): Promise<any> {
+  return new Promise((resolve, reject) => {
+    console.log(`🚀 Запуск Python конвертера PDF → PNG`);
+    
+    const args = [
+      scriptPath,
+      pdfPath,
+      '--dpi', dpi.toString()
+    ];
+    
+    const python = spawn(pythonPath, args);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`❌ Python скрипт завершился с ошибкой (код ${code}):`, stderr);
+        resolve({ success: false, error: stderr || 'Ошибка выполнения Python скрипта' });
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout);
+        resolve(result);
+      } catch (error) {
+        console.error('❌ Ошибка парсинга JSON от Python:', error);
+        console.error('Вывод:', stdout);
+        resolve({ success: false, error: 'Ошибка парсинга результата Python скрипта' });
+      }
+    });
+    
+    python.on('error', (error) => {
+      console.error('❌ Ошибка запуска Python процесса:', error);
+      reject(error);
+    });
+  });
+}
+
+// ============================================
+// Функция: OCR через Google Vision
+// ============================================
+async function extractTextFromImage(buffer: Buffer, isPdf: boolean = false): Promise<string> {
+  try {
+    // Если это PDF, сначала конвертируем в изображение
+    if (isPdf) {
+      console.log('📄 Конвертация PDF в изображение...');
+      const pdfResult = await convertPdfToImages(buffer);
+      
+      // Обрабатываем все страницы через OCR
+      console.log(`📄 Обработка ${pdfResult.length} страниц через OCR...`);
+      const allTexts: string[] = [];
+      
+      for (let i = 0; i < pdfResult.length; i++) {
+        console.log(`📄 OCR страница ${i + 1}/${pdfResult.length}...`);
+        const pageBuffer = Buffer.from(pdfResult[i].base64, 'base64');
+        
+        const [result] = await vision.textDetection({
+          image: { content: pageBuffer },
+        });
+        
+        const detections = result.textAnnotations;
+        if (detections && detections.length > 0) {
+          const pageText = detections[0].description || '';
+          allTexts.push(pageText);
+          console.log(`✅ Страница ${i + 1}: извлечено ${pageText.length} символов`);
+        }
+      }
+      
+      const fullText = allTexts.join('\n\n=== СЛЕДУЮЩАЯ СТРАНИЦА ===\n\n');
+      console.log(`✅ Всего извлечено ${fullText.length} символов из ${pdfResult.length} страниц`);
+      return fullText;
+    }
+    
+    // Обычное изображение
+    const [result] = await vision.textDetection({
+      image: { content: buffer },
+    });
+    
+    const detections = result.textAnnotations;
+    if (!detections || detections.length === 0) {
+      console.warn('⚠️ OCR не обнаружил текста');
+      return '';
+    }
+    
+    const fullText = detections[0].description || '';
+    console.log(`✅ OCR извлек ${fullText.length} символов`);
+    return fullText;
+    
+  } catch (error) {
+    console.error('❌ Ошибка Google Vision OCR:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// Функция: Извлечение текста из Excel
+// ============================================
+async function extractTextFromExcel(buffer: Buffer, filename: string): Promise<string> {
+  const tempDir = path.join(process.cwd(), 'temp');
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const tempId = uuidv4();
+  const fileExt = filename.split('.').pop()?.toLowerCase() || 'xlsx';
+  const tempFilePath = path.join(tempDir, `${tempId}.${fileExt}`);
+  
+  try {
+    // Сохраняем Excel во временный файл
+    await fs.writeFile(tempFilePath, buffer);
+    console.log(`💾 Временный Excel: ${tempFilePath}`);
+    
+    // Путь к Python скрипту
+    const scriptPath = path.join(process.cwd(), 'python-scripts', 'office_to_text.py');
+    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    
+    // Запускаем Python скрипт
+    const result = await new Promise<any>((resolve, reject) => {
+      const python = spawn(pythonExecutable, [scriptPath, tempFilePath]);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      python.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      python.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      python.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr || 'Ошибка выполнения office_to_text.py'));
+          return;
+        }
+        
+        try {
+          const result = JSON.parse(stdout);
+          resolve(result);
+        } catch (error) {
+          reject(new Error('Ошибка парсинга JSON от office_to_text.py'));
+        }
+      });
+    });
+    
+    // Удаляем временный файл
+    try {
+      await fs.unlink(tempFilePath);
+    } catch (error) {
+      console.warn('⚠️ Не удалось удалить временный файл:', error);
+    }
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    console.log(`✅ Извлечено ${result.text_length} символов из Excel`);
+    return result.text || '';
+    
+  } catch (error) {
+    console.error('❌ Ошибка извлечения текста из Excel:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// Функция: Парсинг через Python скрипт
+// ============================================
+async function parseInvoiceWithPython(text: string): Promise<ParsedInvoiceData> {
+  try {
+    const pythonScript = path.join(process.cwd(), 'ultimate_invoice_parser.py');
+    
+    // Создаем временный файл с текстом
+    const tempTextFile = path.join(process.cwd(), 'temp', `ocr_${Date.now()}.txt`);
+    await fs.writeFile(tempTextFile, text, 'utf-8');
+    
+    const command = `python "${pythonScript}" --file "${tempTextFile}" --output-format json`;
+    
+    const { stdout, stderr } = await execAsync(command, {
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    
+    // Удаляем временный файл
+    await fs.unlink(tempTextFile).catch(() => {});
+    
+    if (stderr) {
+      console.warn('⚠️ Python stderr:', stderr);
+    }
+    
+    console.log('📄 Python stdout (первые 500 символов):', stdout.substring(0, 500));
+    console.log('📏 Python stdout длина:', stdout.length);
+    
+    // Python скрипт может выводить отладочные сообщения, поэтому извлекаем только JSON
+    // JSON начинается с { и заканчивается }
+    const jsonStart = stdout.indexOf('{');
+    const jsonEnd = stdout.lastIndexOf('}');
+    
+    if (jsonStart === -1 || jsonEnd === -1) {
+      throw new Error('JSON не найден в выводе Python скрипта');
+    }
+    
+    const jsonString = stdout.substring(jsonStart, jsonEnd + 1);
+    console.log('🔍 Извлеченный JSON:', jsonString.substring(0, 200));
+    
+    const parsed = JSON.parse(jsonString);
+    console.log('✅ Python парсинг завершен:', parsed);
+    
+    // Python возвращает вложенную структуру {invoice: {...}, contractor: {...}}
+    return {
+      invoice_number: parsed.invoice?.number || null,
+      invoice_date: parsed.invoice?.date || null,
+      total_amount: parsed.invoice?.total_amount ? parseFloat(parsed.invoice.total_amount) : null,
+      vat_amount: parsed.invoice?.vat_amount ? parseFloat(parsed.invoice.vat_amount) : null,
+      supplier_name: parsed.contractor?.name || null,
+      supplier_inn: parsed.contractor?.inn || null,
+    };
+    
+  } catch (error) {
+    console.error('❌ Ошибка Python парсинга:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// POST Handler: Загрузка и распознавание счета
+// ============================================
 export async function POST(request: NextRequest) {
-  console.log('📨 [SMART-INVOICE] Получен новый запрос');
+  const requestId = crypto.randomUUID().substring(0, 8);
+  console.log(`\n📨 [${requestId}] Новый запрос на распознавание счета`);
   
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const dpi = (formData.get('dpi') as string) || '200';
+    const projectId = formData.get('project_id') as string | null;
     
     if (!file) {
       return NextResponse.json({ error: 'Файл не найден' }, { status: 400 });
     }
     
-    console.log(`📄 [SMART-INVOICE] Файл: ${file.name}, Размер: ${file.size} байт, Тип: ${file.type}`);
-    
-    // Проверяем тип файла
-    const fileExtension = file.name.toLowerCase().split('.').pop();
-    const supportedTypes = ['pdf', 'xlsx', 'xls', 'docx', 'doc', 'txt'];
-    
-    if (!fileExtension || !supportedTypes.includes(fileExtension)) {
-      return NextResponse.json({ 
-        error: `Неподдерживаемый формат файла. Поддерживаются: ${supportedTypes.join(', ')}` 
-      }, { status: 400 });
+    console.log(`📄 Файл: ${file.name} (${file.size} байт)`);
+    if (projectId) {
+      console.log(`🔗 Привязка к проекту: ${projectId}`);
     }
     
-    // Сохраняем файл временно
-    const buffer = await file.arrayBuffer();
-    const tempDir = path.join(process.cwd(), 'temp');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempFilePath = path.join(tempDir, `upload_${Date.now()}.${fileExtension}`);
-    await fs.writeFile(tempFilePath, Buffer.from(buffer));
+    // Шаг 1: Загружаем файл в Storage (кроме Excel)
+    let fileUrl: string | null = null;
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
     
-    console.log(`💾 [SMART-INVOICE] Файл сохранен: ${tempFilePath}`);
-    
-    let fullText = '';
-    
-    // Определяем способ обработки файла
-    if (['xlsx', 'xls', 'docx', 'doc'].includes(fileExtension)) {
-      // Обработка Office документов
-      console.log(`📊 [SMART-INVOICE] Извлечение текста из Office документа...`);
-      
-      const officeScriptPath = path.join(process.cwd(), 'python-scripts', 'office_to_text.py');
-      const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
-      
-      const officeResult = await runPythonScript(pythonExecutable, officeScriptPath, [tempFilePath]);
-      
-      if (!officeResult.success) {
-        throw new Error(`Ошибка извлечения текста из Office документа: ${officeResult.error}`);
-      }
-      
+    if (!isExcel) {
       try {
-        // Если результат уже распарсен
-        const textResult = officeResult.parsed || JSON.parse(officeResult.output);
-        if (textResult.error) {
-          throw new Error(textResult.error);
-        }
-        
-        fullText = textResult.text || '';
-        console.log(`✅ [SMART-INVOICE] Текст извлечен: ${textResult.text_length} символов`);
-      } catch (parseError) {
-        throw new Error(`Ошибка парсинга результата: ${parseError}`);
+        fileUrl = await uploadFileToStorage(file);
+      } catch (storageError) {
+        const errorMessage = storageError instanceof Error ? storageError.message : 'Ошибка загрузки файла в Storage';
+        console.error('❌ Storage error:', errorMessage);
+        return NextResponse.json({ 
+          error: errorMessage,
+          details: 'Проверьте файл STORAGE-SETUP.md для инструкций по настройке'
+        }, { status: 500 });
       }
       
-    } else if (fileExtension === 'txt') {
-      // Обработка текстовых файлов
-      console.log(`📝 [SMART-INVOICE] Чтение текстового файла...`);
-      
-      try {
-        fullText = await fs.readFile(tempFilePath, 'utf-8');
-        console.log(`✅ [SMART-INVOICE] Текст прочитан: ${fullText.length} символов`);
-      } catch (error) {
-        throw new Error(`Ошибка чтения текстового файла: ${error}`);
+      if (!fileUrl) {
+        return NextResponse.json({ 
+          error: 'Не удалось загрузить файл в Storage',
+          details: 'Проверьте настройки Supabase Storage'
+        }, { status: 500 });
       }
-      
     } else {
-      // Обработка PDF файлов
-      console.log(`📄 [SMART-INVOICE] Конвертация PDF в изображения...`);
-
-      // Шаг 1: Конвертируем PDF в изображения
-      const pdfToPngScript = path.join(process.cwd(), 'python-scripts', 'pdf_to_png.py');
-      const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
-      
-      const conversionResult = await runPythonScript(pythonExecutable, pdfToPngScript, [
-        tempFilePath,
-        '--dpi', dpi
-      ]);
-      
-      if (!conversionResult.success) {
-        throw new Error(`Ошибка конвертации PDF: ${conversionResult.error}`);
-      }
-      
-      console.log(`✅ [SMART-INVOICE] PDF конвертирован`);
-      console.log(`🔍 [SMART-INVOICE] Результат конвертации:`, conversionResult);
-      
-      // Парсим результат, если он не был распарсен автоматически
-      let pdfData;
-      if (conversionResult.parsed) {
-        pdfData = conversionResult.parsed;
-      } else {
-        try {
-          pdfData = JSON.parse(conversionResult.output);
-        } catch (e) {
-          throw new Error(`Ошибка парсинга результата PDF конвертации: ${conversionResult.output}`);
-        }
-      }
-      
-      console.log(`✅ [SMART-INVOICE] PDF конвертирован: ${pdfData.page_count} страниц`);
-      
-      // Шаг 2: OCR через Google Vision
-      if (!pdfData.images || !Array.isArray(pdfData.images)) {
-        throw new Error(`Не удалось получить изображения из PDF. pdfData.images: ${JSON.stringify(pdfData.images)}`);
-      }
-      
-      const ocrResults = [];
-      
-      for (const image of pdfData.images) {
-        console.log(`🔍 [SMART-INVOICE] OCR страницы ${image.page}...`);
-        
-        const imageBuffer = Buffer.from(image.base64, 'base64');
-        
-        // Пробуем оба метода OCR и выбираем лучший результат
-        console.log(`📋 [SMART-INVOICE] Используем documentTextDetection...`);
-        const [docResult] = await vision.documentTextDetection({
-          image: { content: imageBuffer },
-          imageContext: {
-            languageHints: ['ru', 'en'],
-          },
-        });
-        
-        console.log(`📋 [SMART-INVOICE] Используем textDetection...`);
-        const [textResult] = await vision.textDetection({
-          image: { content: imageBuffer },
-        });
-        
-        let pageText = '';
-        let docText = '';
-        let simpleText = '';
-        
-        // Извлекаем текст из documentTextDetection
-        if (docResult.fullTextAnnotation) {
-          docText = docResult.fullTextAnnotation.text || '';
-        } else if (docResult.textAnnotations && Array.isArray(docResult.textAnnotations) && docResult.textAnnotations.length > 0) {
-          docText = docResult.textAnnotations[0].description || '';
-        }
-        
-        // Извлекаем текст из textDetection
-        if (textResult.textAnnotations && Array.isArray(textResult.textAnnotations) && textResult.textAnnotations.length > 0) {
-          simpleText = textResult.textAnnotations[0].description || '';
-        }
-        
-        // Выбираем лучший результат (больше текста = лучше)
-        if (docText.length > simpleText.length) {
-          pageText = docText;
-          console.log(`📄 [SMART-INVOICE] Выбран documentTextDetection: ${docText.length} символов`);
-        } else {
-          pageText = simpleText;
-          console.log(`📄 [SMART-INVOICE] Выбран textDetection: ${simpleText.length} символов`);
-        }
-        
-        console.log(`📝 [SMART-INVOICE] Текст страницы ${image.page} (первые 200 символов):`, pageText.substring(0, 200));
-        
-        fullText += pageText + '\n';
-        
-        ocrResults.push({
-          page: image.page,
-          text: pageText,
-          confidence: (Array.isArray(textResult.textAnnotations) && textResult.textAnnotations.length > 0) ? (textResult.textAnnotations[0].score || 0) : 0
-        });
-      }
-      
-      console.log(`✅ [SMART-INVOICE] OCR завершен, извлечено ${fullText.length} символов`);
+      console.log('📊 Excel файл - обрабатываем без загрузки в Storage');
     }
     
-    // Шаг 3: Парсинг извлеченного текста
-    console.log(`🧠 [SMART-INVOICE] Запуск парсера счетов...`);
+    // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Excel)
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let ocrText: string;
     
-    const parserScript = path.join(process.cwd(), 'python-scripts', 'ultimate_invoice_parser.py');
-    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
-    
-    // Используем весь извлеченный текст для парсинга
-    const textForParsing = fullText;
-    console.log(`📝 [SMART-INVOICE] Текст для парсинга (${textForParsing.length} символов):`, textForParsing.substring(0, 200) + '...');
-    
-    // Записываем текст во временный файл, чтобы избежать проблем с кавычками
-    const textFilePath = path.join(tempDir, `text_${Date.now()}.txt`);
-    await fs.writeFile(textFilePath, textForParsing, 'utf-8');
-    
-    // Дополнительная отладка - сохраняем полный текст для анализа
-    const debugTextPath = path.join(tempDir, `debug_full_text_${Date.now()}.txt`);
-    await fs.writeFile(debugTextPath, textForParsing, 'utf-8');
-    console.log(`🔍 [SMART-INVOICE] Полный текст сохранен в: ${debugTextPath}`);
-    
-    // Передаем путь к файлу парсеру
-    const parseResult = await runPythonScript(pythonExecutable, parserScript, ['--file', textFilePath, '--output-format', 'json']);
-    
-    // Удаляем временный текстовый файл
-    try {
-      await fs.unlink(textFilePath);
-    } catch (e) {
-      console.warn('⚠️ [SMART-INVOICE] Не удалось удалить временный текстовый файл:', e);
+    if (isExcel) {
+      // Для Excel используем office_to_text.py
+      console.log('📊 Извлечение текста из Excel...');
+      ocrText = await extractTextFromExcel(buffer, file.name);
+    } else {
+      // Для PDF/изображений используем OCR
+      const isPdf = file.type === 'application/pdf';
+      ocrText = await extractTextFromImage(buffer, isPdf);
     }
     
-    if (!parseResult.success) {
-      throw new Error(`Ошибка парсинга счета: ${parseResult.error}`);
+    if (!ocrText) {
+      return NextResponse.json({ error: 'Не удалось распознать текст' }, { status: 500 });
     }
     
-    // Парсим результат
-    console.log(`📊 [SMART-INVOICE] Результат парсера:`, parseResult.output.substring(0, 500));
+    // Шаг 3: Парсинг данных через Python
+    const parsed = await parseInvoiceWithPython(ocrText);
     
-    let parsedData;
-    try {
-      // Если результат уже распарсен в runPythonScript
-      parsedData = parseResult.parsed || JSON.parse(parseResult.output);
-      
-      // Проверяем, есть ли ошибка в результате парсинга
-      if (parsedData.error) {
-        console.log(`⚠️ [SMART-INVOICE] Парсер определил неподходящий документ: ${parsedData.error}`);
-        return NextResponse.json({
-          success: false,
-          error: parsedData.error,
-          message: parsedData.message || 'Ошибка при анализе документа',
-          document_type: parsedData.document_type || 'unknown'
-        }, { status: 400 });
-      }
-      
-    } catch (e) {
-      console.error('❌ [SMART-INVOICE] Не удалось распарсить JSON:', parseResult.output);
-      console.error('❌ [SMART-INVOICE] Ошибка парсинга:', e);
-      
-      // Если парсер вернул readable формат, попробуем извлечь основную информацию
-      if (parseResult.output.includes('Номер счета:')) {
-        console.log('🔄 [SMART-INVOICE] Парсер вернул readable формат, извлекаем данные...');
-        
-        // Создаем базовый объект с доступными данными
-        parsedData = {
-          invoice: {
-            number: null as string | null,
-            date: null as string | null,
-            due_date: null as string | null,
-            total_amount: null as number | null,
-            vat_amount: null as number | null,
-            vat_rate: null as number | null,
-            has_vat: false
-          },
-          contractor: {
-            name: null as string | null,
-            inn: null as string | null,
-            kpp: null as string | null,
-            address: null as string | null
-          },
-          items: [] as any[]
-        };
-        
-        // Пытаемся извлечь данные напрямую из исходного текста
-        console.log('🔍 [SMART-INVOICE] Извлекаем данные из исходного текста...');
-        
-        // Ищем данные в исходном тексте
-        const invoiceNumberMatch = textForParsing.match(/(?:СЧЕТ|Счет)\s*(?:на оплату\s*)?№\s*([А-Я\d\-]+)/i) || 
-                                  textForParsing.match(/№\s*([А-Я\d\-]+)\s*от/i);
-        const invoiceDateMatch = textForParsing.match(/от\s*(\d{1,2})\s*([а-яё]+)\s*(\d{4})/i) ||
-                               textForParsing.match(/(\d{1,2})\s*([а-яё]+)\s*(\d{4})\s*г/i);
-        const totalAmountMatch = textForParsing.match(/(?:Всего к оплате|Итого|ИТОГО):\s*([\d\s.,]+)/i);
-        const vatAmountMatch = textForParsing.match(/(?:том числе НДС|НДС):\s*([\d\s.,]+)/i);
-        
-        console.log('🔍 [INVOICE] Поиск номера счета...');
-        console.log('🔍 [INVOICE] invoiceNumberMatch:', invoiceNumberMatch);
-        console.log('🔍 [INVOICE] Поиск даты...');
-        console.log('🔍 [INVOICE] invoiceDateMatch:', invoiceDateMatch);
-        
-        // Правильный поиск контрагента (поставщика, а не покупателя)
-        let contractorName = '';
-        
-        console.log('🔍 [CONTRACTOR] Начинаем поиск поставщика...');
-        console.log('🔍 [CONTRACTOR] Первые 500 символов текста:', textForParsing.substring(0, 500));
-        
-        // 1. Сначала ищем по явному указанию "Поставщик:"
-        const supplierMatch = textForParsing.match(/Поставщик:\s*([^\n\r,]+?)(?:,|\s*ИНН|\s*КПП|\s*Адрес:|\s*тел\.|\s*$)/i);
-        if (supplierMatch) {
-          contractorName = supplierMatch[1].trim();
-          console.log(`🔍 [CONTRACTOR] Найден поставщик по ключевому слову: "${contractorName}"`);
-        }
-        
-        // 2. Ищем "Группа компаний СтиС" в начале документа
-        if (!contractorName) {
-          const stisInHeaderMatch = textForParsing.match(/(?:^|[\s\n])(?:\d+\/\d+\s+)?ООО\s*"?Группа компаний\s*"?([^"\n\r]*?)"?(?:\s|$)/i);
-          if (stisInHeaderMatch) {
-            const addition = stisInHeaderMatch[1] ? stisInHeaderMatch[1].trim().replace(/"/g, '') : '';
-            contractorName = addition ? `ООО "Группа компаний ${addition}"` : 'ООО "Группа компаний"';
-            console.log(`🔍 [CONTRACTOR] Найдена "Группа компаний" в заголовке: "${contractorName}"`);
-          }
-        }
-        
-        // 3. Ищем в банковских реквизитах (секция "Получатель")
-        if (!contractorName) {
-          const receiverSectionMatch = textForParsing.match(/Получатель[\s\S]*?(?:ООО|ИП|ЗАО|ПАО|АО)\s*"?([^"\n\r]+?)"?\s*(?:Сч\.|ИНН|\s)/i);
-          if (receiverSectionMatch) {
-            const companyTypeMatch = textForParsing.match(/Получатель[\s\S]*?(ООО|ИП|ЗАО|ПАО|АО)/i);
-            const companyType = companyTypeMatch ? companyTypeMatch[1] : 'ООО';
-            contractorName = `${companyType} ${receiverSectionMatch[1]}`.trim();
-            console.log(`🔍 [CONTRACTOR] Найден получатель в банковских реквизитах: "${contractorName}"`);
-          }
-        }
-        
-        // 4. Исключаем строки с "Заказчик:" и "Покупатель:" и ищем первую компанию
-        if (!contractorName) {
-          // Более агрессивное исключение покупателя/заказчика
-          const excludePatterns = [
-            /Заказчик:[\s\S]*?(?=\n[А-Я]|$)/gi,
-            /Покупатель:[\s\S]*?(?=\n[А-Я]|$)/gi
-          ];
-          
-          let cleanText = textForParsing;
-          excludePatterns.forEach(pattern => {
-            cleanText = cleanText.replace(pattern, '');
-          });
-          
-          console.log('🔍 [CONTRACTOR] Текст после исключения покупателя (первые 300 символов):', cleanText.substring(0, 300));
-          
-          const firstCompanyMatch = cleanText.match(/(ООО|ИП|ЗАО|ПАО|АО)\s*"?([^"\n\r,]+?)(?:",|\s*ИНН|\s*КПП|\s*Сч\.|\s|$)/i);
-          if (firstCompanyMatch) {
-            contractorName = `${firstCompanyMatch[1]} ${firstCompanyMatch[2]}`.trim();
-            console.log(`🔍 [CONTRACTOR] Найдена первая компания после очистки: "${contractorName}"`);
-          }
-        }
-        
-        // Поиск ИНН поставщика (не покупателя)
-        let innMatch = null;
-        
-        console.log('🔍 [INN] Начинаем поиск ИНН поставщика...');
-        
-        // 1. Если у нас есть название поставщика, ищем ИНН рядом с ним
-        if (contractorName) {
-          // Ищем ИНН в секции поставщика
-          const supplierSectionMatch = textForParsing.match(/Поставщик:[\s\S]*?ИНН\s*(\d{10,12})/i);
-          if (supplierSectionMatch) {
-            innMatch = [supplierSectionMatch[0], supplierSectionMatch[1]];
-            console.log('🔍 [INN] Найден ИНН в секции поставщика:', supplierSectionMatch[1]);
-          }
-        }
-        
-        // 2. Ищем ИНН рядом с "Группа компаний" (специальный случай)
-        if (!innMatch && contractorName.includes('Группа компаний')) {
-          console.log('🔍 [INN] Ищем ИНН для "Группа компаний"...');
-          
-          // Паттерн 1: 7720774346/470645001 ООО "Группа компаний "СтиС"
-          const stisInnBeforeMatch = textForParsing.match(/(\d{10,12})\/\d+\s+ООО\s*"?Группа компаний/i);
-          if (stisInnBeforeMatch) {
-            innMatch = [stisInnBeforeMatch[0], stisInnBeforeMatch[1]];
-            console.log('🔍 [INN] Найден ИНН ПЕРЕД "Группа компаний":', stisInnBeforeMatch[1]);
-          } else {
-            // Паттерн 2: ООО "Группа компаний" ... ИНН 7720774346
-            const stisInnAfterMatch = textForParsing.match(/ООО\s*"?Группа компаний[\s\S]*?ИНН[\s:]*(\d{10,12})/i);
-            if (stisInnAfterMatch) {
-              innMatch = [stisInnAfterMatch[0], stisInnAfterMatch[1]];
-              console.log('🔍 [INN] Найден ИНН ПОСЛЕ "Группа компаний":', stisInnAfterMatch[1]);
-            } else {
-              // Паттерн 3: поиск номера на следующей строке после поставщика
-              const supplierLineMatch = textForParsing.match(/Поставщик[:\s]*[^\n]*Группа компаний[^\n]*\n\s*(\d{10,12})/i);
-              if (supplierLineMatch) {
-                innMatch = [supplierLineMatch[0], supplierLineMatch[1]];
-                console.log('🔍 [INN] Найден ИНН на следующей строке после "Группа компаний":', supplierLineMatch[1]);
-              }
-            }
-          }
-        }
-        
-        // 3. Ищем ИНН поставщика, исключая ИНН покупателя/заказчика
-        if (!innMatch) {
-          // Список запрещенных ИНН (покупатели/заказчики)
-          const buyerInns: string[] = [];
-          
-          // Извлекаем ИНН из секций покупателей/заказчиков
-          const buyerSections = [
-            /Заказчик:[\s\S]*?ИНН[\s:]*(\d{10,12})/gi,
-            /Покупатель:[\s\S]*?ИНН[\s:]*(\d{10,12})/gi
-          ];
-          
-          buyerSections.forEach(pattern => {
-            let match;
-            while ((match = pattern.exec(textForParsing)) !== null) {
-              buyerInns.push(match[1]);
-              console.log('🚫 [INN] Найден ИНН покупателя/заказчика (исключаем):', match[1]);
-            }
-          });
-          
-          // Ищем все ИНН в документе и берем первый, который НЕ является покупателем
-          const allInnMatches = textForParsing.matchAll(/ИНН[\s:]*(\d{10,12})/gi);
-          for (const match of allInnMatches) {
-            if (!buyerInns.includes(match[1])) {
-              innMatch = [match[0], match[1]];
-              console.log('🔍 [INN] Найден ИНН поставщика:', match[1]);
-              break;
-            }
-          }
-          
-          // Если не нашли по паттерну "ИНН:", ищем просто числа в секции поставщика
-          if (!innMatch && contractorName) {
-            const supplierSectionMatch = textForParsing.match(/Поставщик[\s\S]*?(\d{10,12})/i);
-            if (supplierSectionMatch && !buyerInns.includes(supplierSectionMatch[1])) {
-              innMatch = [supplierSectionMatch[0], supplierSectionMatch[1]];
-              console.log('🔍 [INN] Найден номер в секции поставщика:', supplierSectionMatch[1]);
-            }
-          }
-        }
-        
-        // 4. В крайнем случае, берем первый ИНН из банковских реквизитов
-        if (!innMatch) {
-          const bankInnMatch = textForParsing.match(/Получатель[\s\S]*?ИНН[\s:]*(\d{10,12})/i);
-          if (bankInnMatch) {
-            innMatch = [bankInnMatch[0], bankInnMatch[1]];
-            console.log('🔍 [INN] Найден ИНН в банковских реквизитах получателя:', bankInnMatch[1]);
-          }
-        }
-        
-        if (invoiceNumberMatch) {
-          parsedData.invoice.number = invoiceNumberMatch[1];
-          console.log('✅ Найден номер счета:', parsedData.invoice.number);
-        }
-        
-        if (invoiceDateMatch) {
-          const day = invoiceDateMatch[1];
-          const month = invoiceDateMatch[2];
-          const year = invoiceDateMatch[3];
-          
-          // Преобразуем месяц
-          const months: {[key: string]: string} = {
-            'января': '01', 'февраля': '02', 'марта': '03', 'апреля': '04',
-            'мая': '05', 'июня': '06', 'июля': '07', 'августа': '08',
-            'сентября': '09', 'октября': '10', 'ноября': '11', 'декабря': '12'
-          };
-          
-          const monthNum = months[month.toLowerCase()] || '01';
-          parsedData.invoice.date = `${year}-${monthNum}-${day.padStart(2, '0')}`;
-          console.log('✅ Найдена дата счета:', parsedData.invoice.date);
-        }
-        
-        if (totalAmountMatch) {
-          const amount = parseFloat(totalAmountMatch[1].replace(/[^\d.]/g, ''));
-          if (!isNaN(amount)) {
-            parsedData.invoice.total_amount = amount;
-            console.log('✅ Найдена сумма:', parsedData.invoice.total_amount);
-          }
-        }
-        
-        if (vatAmountMatch) {
-          const vatAmount = parseFloat(vatAmountMatch[1].replace(/[^\d.]/g, ''));
-          if (!isNaN(vatAmount)) {
-            parsedData.invoice.vat_amount = vatAmount;
-            parsedData.invoice.has_vat = true;
-            console.log('✅ Найден НДС:', parsedData.invoice.vat_amount);
-          }
-        }
-        
-        if (contractorName) {
-          console.log(`🔍 Исходное название: "${contractorName}"`);
-          
-          // Очищаем название от лишних символов
-          contractorName = contractorName
-            .replace(/^["']+|["']+$/g, '') // убираем кавычки в начале и конце
-            .replace(/\s+/g, ' ') // нормализуем пробелы
-            .trim();
-          
-          // Специальная обработка для двойных кавычек в названии
-          if (contractorName.includes('"')) {
-            // Случай: Группа компаний "СтиС"
-            contractorName = contractorName.replace(/"/g, '');
-          }
-          
-          parsedData.contractor.name = contractorName;
-          console.log('✅ Итоговое название поставщика:', parsedData.contractor.name);
-        }
-        
-        if (innMatch) {
-          parsedData.contractor.inn = innMatch[1];
-          console.log('✅ Найден ИНН:', parsedData.contractor.inn);
-        }
-        
-      } else {
-        throw new Error('Ошибка обработки результата парсера');
-      }
+    // Шаг 4: Получить или создать поставщика
+    const supplierId = await getOrCreateSupplier(
+      parsed.supplier_name || 'Неизвестный поставщик',
+      parsed.supplier_inn
+    );
+    
+    // Шаг 5: Создаем счет в БД
+    const newInvoice: CreateInvoice = {
+      supplier_id: supplierId || undefined,
+      invoice_number: parsed.invoice_number || 'Не распознан',
+      invoice_date: parsed.invoice_date || new Date().toISOString().split('T')[0],
+      total_amount: parsed.total_amount || 0,
+      vat_amount: parsed.vat_amount || undefined,
+      file_url: fileUrl,
+      project_id: projectId || undefined,
+    };
+    
+    if (projectId) {
+      console.log(`✅ Счет будет привязан к проекту: ${projectId}`);
     }
     
-    console.log('✅ [SMART-INVOICE] Парсинг завершен успешно');
+    console.log('📦 Данные счета для вставки:', JSON.stringify(newInvoice, null, 2));
     
-    // Очистка временных файлов
-    try {
-      await fs.unlink(tempFilePath);
-    } catch (cleanupError) {
-      console.warn('⚠️ [SMART-INVOICE] Не удалось удалить временные файлы:', cleanupError);
+    const { data: invoice, error } = await supabase
+      .from('invoices')
+      .insert(newInvoice)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('❌ Ошибка создания счета:', error);
+      return NextResponse.json({ error: 'Ошибка сохранения счета' }, { status: 500 });
     }
+    
+    console.log(`✅ [${requestId}] Счет создан: ${invoice.id}`);
     
     return NextResponse.json({
       success: true,
-      data: parsedData,
-      ocr_text: fullText.substring(0, 5000) + (fullText.length > 5000 ? '...' : ''), // Увеличиваем лимит до 5000 символов
-      file_info: {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        extension: fileExtension
-      }
+      invoice,
+      parsed,
     });
     
-  } catch (error: any) {
-    console.error('❌ [SMART-INVOICE] Ошибка:', error.message);
-    return NextResponse.json({ 
-      error: error.message || 'Внутренняя ошибка сервера' 
-    }, { status: 500 });
+  } catch (error) {
+    console.error(`❌ [${requestId}] Ошибка:`, error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Неизвестная ошибка' },
+      { status: 500 }
+    );
   }
-}
-
-function runPythonScript(pythonPath: string, scriptPath: string, args: string[]): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const command = `"${pythonPath}" "${scriptPath}" ${args.map(arg => `"${arg}"`).join(' ')}`;
-    
-    console.log(`🐍 [PYTHON] Выполнение: ${command}`);
-    
-    exec(command, { 
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024 // 10MB буфер
-    }, (error, stdout, stderr) => {
-      console.log(`🐍 [PYTHON] stdout:`, stdout);
-      console.log(`🐍 [PYTHON] stderr:`, stderr);
-      
-      if (error) {
-        console.error('❌ [PYTHON] Ошибка выполнения:', error.message);
-        console.error('❌ [PYTHON] exit code:', error.code);
-        resolve({ success: false, error: error.message, stderr, stdout });
-        return;
-      }
-      
-      if (stderr && stderr.trim()) {
-        console.warn('⚠️ [PYTHON] stderr:', stderr);
-        // Если есть stderr, но нет ошибки выполнения, все равно возвращаем ошибку
-        if (stderr.includes('Error:') || stderr.includes('Exception:') || stderr.includes('Traceback:')) {
-          resolve({ success: false, error: stderr, stderr, stdout });
-          return;
-        }
-      }
-      
-      console.log('✅ [PYTHON] Выполнено успешно');
-      
-      try {
-        const result = JSON.parse(stdout);
-        resolve({ success: true, output: stdout.trim(), parsed: result });
-      } catch (parseError) {
-        // Если не JSON, возвращаем как есть
-        resolve({ success: true, output: stdout.trim() });
-      }
-    });
-  });
 }

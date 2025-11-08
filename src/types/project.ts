@@ -1,19 +1,52 @@
-// Типы данных для проектов
+// TypeScript типы для таблицы projects
+
+export type ProjectStatus = 
+  | 'planning'
+  | 'active'
+  | 'on_hold'
+  | 'done'
+  | 'cancelled';
+
+export const projectStatusMap: Record<ProjectStatus, string> = {
+  planning: 'Планирование',
+  active: 'Активный',
+  on_hold: 'На паузе',
+  done: 'Завершен',
+  cancelled: 'Отменен'
+};
+
 export interface Project {
   id: string;
   title: string;
   client: string;
-  address: string;
-  status: 'planning' | 'active' | 'on_hold' | 'done' | 'cancelled';
+  address?: string;
+  status: ProjectStatus;
+  description?: string;
   due_date?: string;
   budget?: number;
-  description?: string;
   created_at: string;
   updated_at?: string;
 }
 
-// Типы для создания нового проекта
-export type NewProject = Omit<Project, 'id' | 'created_at' | 'updated_at'>;
+export interface CreateProjectData {
+  title: string;
+  client: string;
+  address?: string;
+  status?: ProjectStatus;
+  description?: string;
+  due_date?: string;
+  budget?: number;
+}
 
-// Типы для обновления проекта
-export type UpdateProject = Partial<Omit<Project, 'id' | 'created_at' | 'updated_at'>>;
+export interface ProjectStats {
+  totalTasks: number;
+  completedTasks: number;
+  totalInvoices: number;
+  totalSpent: number;
+  budgetUsage: number;
+  categoryBreakdown: {
+    category: string;
+    amount: number;
+    percentage: number;
+  }[];
+}

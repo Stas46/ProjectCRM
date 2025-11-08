@@ -1,0 +1,317 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Supplier, SupplierCategory, expenseCategoryMap } from '@/types/supplier';
+import { Home, Package, Edit, Save, X } from 'lucide-react';
+
+interface SupplierWithStats extends Supplier {
+  invoiceCount: number;
+  totalAmount: number;
+  totalVat: number;
+}
+
+export default function SuppliersPage() {
+  const [suppliers, setSuppliers] = useState<SupplierWithStats[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [editingSupplier, setEditingSupplier] = useState<SupplierWithStats | null>(null);
+  const [editData, setEditData] = useState({
+    name: '',
+    inn: ''
+  });
+
+  useEffect(() => {
+    loadSuppliers();
+  }, []);
+
+  async function loadSuppliers() {
+    setLoading(true);
+    try {
+      const { data: suppliersData, error: suppliersError } = await supabase
+        .from('suppliers')
+        .select('*')
+        .order('name');
+
+      if (suppliersError) throw suppliersError;
+
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select('supplier_id, total_amount, vat_amount');
+
+      if (invoicesError) throw invoicesError;
+
+      const suppliersWithStats = (suppliersData || []).map(supplier => {
+        const supplierInvoices = (invoicesData || []).filter(inv => inv.supplier_id === supplier.id);
+        return {
+          ...supplier,
+          invoiceCount: supplierInvoices.length,
+          totalAmount: supplierInvoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0),
+          totalVat: supplierInvoices.reduce((sum, inv) => sum + (Number(inv.vat_amount) || 0), 0)
+        };
+      });
+
+      setSuppliers(suppliersWithStats);
+    } catch (error) {
+      console.error('Ошибка:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateSupplierCategory(supplierId: string, newCategory: SupplierCategory) {
+    try {
+      const { error } = await supabase
+        .from('suppliers')
+        .update({ category: newCategory })
+        .eq('id', supplierId);
+
+      if (error) throw error;
+
+      setSuppliers(prev =>
+        prev.map(s => s.id === supplierId ? { ...s, category: newCategory } : s)
+      );
+    } catch (error) {
+      console.error('Ошибка:', error);
+    }
+  }
+
+  function openEditSupplier(supplier: SupplierWithStats) {
+    setEditingSupplier(supplier);
+    setEditData({
+      name: supplier.name,
+      inn: supplier.inn || ''
+    });
+  }
+
+  async function saveSupplierEdit() {
+    if (!editingSupplier) return;
+
+    try {
+      const { error } = await supabase
+        .from('suppliers')
+        .update({
+          name: editData.name.trim(),
+          inn: editData.inn.trim() || null
+        })
+        .eq('id', editingSupplier.id);
+
+      if (error) throw error;
+
+      // Обновляем локальное состояние
+      setSuppliers(prev =>
+        prev.map(s => s.id === editingSupplier.id 
+          ? { ...s, name: editData.name.trim(), inn: editData.inn.trim() || '' }
+          : s
+        )
+      );
+
+      setEditingSupplier(null);
+      alert('Поставщик обновлен');
+    } catch (error) {
+      console.error('Ошибка:', error);
+      alert('Ошибка при сохранении');
+    }
+  }
+
+  const filteredSuppliers = selectedCategory === 'all'
+    ? suppliers
+    : suppliers.filter(s => s.category === selectedCategory);
+
+  const totalStats = filteredSuppliers.reduce((acc, s) => ({
+    suppliers: acc.suppliers + 1,
+    invoices: acc.invoices + s.invoiceCount,
+    amount: acc.amount + s.totalAmount,
+    vat: acc.vat + s.totalVat
+  }), { suppliers: 0, invoices: 0, amount: 0, vat: 0 });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+          <p className="text-sm text-gray-600">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Шапка */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <a href="/" className="text-gray-600 hover:text-gray-900">
+              <Home className="w-5 h-5" />
+            </a>
+            <Package className="w-5 h-5 text-blue-600" />
+            <h1 className="text-xl font-bold text-gray-900">Поставщики</h1>
+            <span className="text-sm text-gray-500">({suppliers.length})</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-3 py-1.5 border rounded-lg text-sm"
+            >
+              <option value="all">Все категории</option>
+              {Object.entries(expenseCategoryMap).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-4">
+        {/* Статистика */}
+        <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="bg-white rounded-lg shadow-sm p-3 border">
+            <div className="text-xs text-gray-600 mb-1">Поставщиков</div>
+            <div className="text-2xl font-bold text-gray-900">{totalStats.suppliers}</div>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm p-3 border">
+            <div className="text-xs text-gray-600 mb-1">Счетов</div>
+            <div className="text-2xl font-bold text-gray-900">{totalStats.invoices}</div>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm p-3 border">
+            <div className="text-xs text-gray-600 mb-1">Сумма</div>
+            <div className="text-2xl font-bold text-gray-900">
+              {(totalStats.amount / 1000).toFixed(0)}к ₽
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm p-3 border">
+            <div className="text-xs text-gray-600 mb-1">НДС</div>
+            <div className="text-2xl font-bold text-gray-900">
+              {(totalStats.vat / 1000).toFixed(0)}к ₽
+            </div>
+          </div>
+        </div>
+
+        {/* Таблица */}
+        {filteredSuppliers.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-lg shadow-sm">
+            <p className="text-gray-600">Поставщиков не найдено</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-700">Счетов</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-700">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredSuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium text-gray-900">{supplier.name}</td>
+                    <td className="px-3 py-2 text-gray-600 font-mono text-xs">{supplier.inn || '—'}</td>
+                    <td className="px-3 py-2 text-center">
+                      <select
+                        value={supplier.category || 'general'}
+                        onChange={(e) => updateSupplierCategory(supplier.id, e.target.value as SupplierCategory)}
+                        className="px-2 py-0.5 text-xs border rounded"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {Object.entries(expenseCategoryMap).map(([key, label]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-center text-gray-600">{supplier.invoiceCount}</td>
+                    <td className="px-3 py-2 text-right font-medium text-gray-900">
+                      {supplier.totalAmount ? `${(supplier.totalAmount / 1000).toFixed(1)}к ₽` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => openEditSupplier(supplier)}
+                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                        title="Редактировать"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Модальное окно редактирования */}
+      {editingSupplier && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Редактировать поставщика</h3>
+              <button
+                onClick={() => setEditingSupplier(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Название
+                </label>
+                <input
+                  type="text"
+                  value={editData.name}
+                  onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder="Название компании"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ИНН
+                </label>
+                <input
+                  type="text"
+                  value={editData.inn}
+                  onChange={(e) => setEditData({ ...editData, inn: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+                  placeholder="ИНН (10 или 12 цифр)"
+                  maxLength={12}
+                />
+              </div>
+
+              <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
+                <strong>Внимание:</strong> Изменение названия или ИНН повлияет на все счета этого поставщика 
+                ({editingSupplier.invoiceCount} {editingSupplier.invoiceCount === 1 ? 'счет' : 'счетов'}).
+              </div>
+            </div>
+
+            <div className="flex gap-2 p-4 border-t bg-gray-50">
+              <button
+                onClick={() => setEditingSupplier(null)}
+                className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={saveSupplierEdit}
+                disabled={!editData.name.trim()}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

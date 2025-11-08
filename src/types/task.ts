@@ -1,10 +1,51 @@
-// Типы данных для задач
+// ============================================
+// TypeScript типы для таблицы tasks
+// ============================================
+
+/**
+ * Статусы задачи
+ */
+export type TaskStatus = 
+  | 'todo'        // К выполнению
+  | 'in_progress' // В работе
+  | 'blocked'     // Заблокирована
+  | 'review'      // На проверке
+  | 'done';       // Выполнена
+
+/**
+ * Карта статусов задачи
+ */
+export const taskStatusMap: Record<TaskStatus, string> = {
+  todo: 'К выполнению',
+  in_progress: 'В работе',
+  blocked: 'Заблокирована',
+  review: 'На проверке',
+  done: 'Выполнена'
+};
+
+/**
+ * Приоритеты задачи
+ */
+export type TaskPriority = 1 | 2 | 3;
+
+/**
+ * Карта приоритетов
+ */
+export const taskPriorityMap: Record<TaskPriority, string> = {
+  1: 'Высокий',
+  2: 'Средний',
+  3: 'Низкий'
+};
+
+/**
+ * Интерфейс задачи
+ */
 export interface Task {
   id: string;
   title: string;
   description?: string;
-  status: 'todo' | 'in_progress' | 'blocked' | 'review' | 'done';
-  priority: 1 | 2 | 3; // 1 - высокий, 2 - средний, 3 - низкий
+  status: TaskStatus;
+  priority: TaskPriority;
   project_id: string;
   assignee_id?: string;
   due_date?: string;
@@ -12,8 +53,15 @@ export interface Task {
   updated_at?: string;
 }
 
-// Типы для создания новой задачи
-export type NewTask = Omit<Task, 'id' | 'created_at' | 'updated_at'>;
-
-// Типы для обновления задачи
-export type UpdateTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at'>>;
+/**
+ * Данные для создания задачи
+ */
+export interface CreateTaskData {
+  title: string;
+  description?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  project_id: string;
+  assignee_id?: string;
+  due_date?: string;
+}
