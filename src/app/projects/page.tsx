@@ -127,7 +127,7 @@ export default function ProjectsPage() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
           >
             <Plus className="w-4 h-4" />
             Создать проект
@@ -151,7 +151,7 @@ export default function ProjectsPage() {
                     required
                     value={formData.title}
                     onChange={e => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                     placeholder="Название"
                   />
                 </div>
@@ -159,7 +159,7 @@ export default function ProjectsPage() {
                                   <label className="block text-sm font-medium text-gray-700 mb-1">Клиент</label>
                 <input
                     type="text"
-                    className="w-full p-2 border rounded-lg"
+                    className="w-full p-2 border rounded-lg text-[16px]"
                     value={formData.client}
                     onChange={e => setFormData({ ...formData, client: e.target.value })}
                     required
@@ -167,14 +167,14 @@ export default function ProjectsPage() {
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Адрес</label>
                   <input
                     type="text"
                     value={formData.address}
                     onChange={e => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                     placeholder="Адрес объекта"
                   />
                 </div>
@@ -184,7 +184,7 @@ export default function ProjectsPage() {
                     type="number"
                     value={formData.budget}
                     onChange={e => setFormData({ ...formData, budget: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                     placeholder="Бюджет"
                   />
                 </div>
@@ -194,7 +194,7 @@ export default function ProjectsPage() {
                     type="date"
                     value={formData.due_date}
                     onChange={e => setFormData({ ...formData, due_date: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
               </div>
@@ -205,7 +205,7 @@ export default function ProjectsPage() {
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                   rows={2}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   placeholder="Описание проекта"
                 />
               </div>
@@ -215,7 +215,7 @@ export default function ProjectsPage() {
                 <select
                   value={formData.status}
                   onChange={e => setFormData({ ...formData, status: e.target.value as any })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                 >
                   <option value="planning">Планирование</option>
                   <option value="active">В работе</option>
@@ -229,14 +229,14 @@ export default function ProjectsPage() {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
                   disabled={creating}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 min-h-[44px]"
                 >
                   {creating ? 'Создание...' : 'Создать'}
                 </button>
@@ -252,7 +252,7 @@ export default function ProjectsPage() {
             <p className="text-gray-600 mb-3">Проектов пока нет</p>
             <button
               onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
             >
               Создать первый проект
             </button>

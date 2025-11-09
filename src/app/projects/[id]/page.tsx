@@ -709,12 +709,63 @@ export default function ProjectDetailPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
+          {/* Мобильный хедер - вертикальная компоновка */}
+          <div className="md:hidden space-y-3">
+            {/* Строка 1: Навигация */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <a href="/" className="text-gray-600 hover:text-gray-900 min-w-[44px] min-h-[44px] flex items-center justify-center">
+                  <Home className="w-5 h-5" />
+                </a>
+                <button onClick={() => router.push('/projects')} className="text-gray-600 hover:text-gray-900 min-w-[44px] min-h-[44px] flex items-center justify-center">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              </div>
+              <button onClick={openEditForm} className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-green-600 text-white rounded-lg hover:bg-green-700">
+                <Edit className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Строка 2: Заголовок */}
+            <div>
+              <h1 className="text-lg font-bold text-gray-900 break-words">{project.title}</h1>
+              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded ${statusColors[project.status as keyof typeof statusColors]}`}>
+                {statusLabels[project.status as keyof typeof statusLabels]}
+              </span>
+            </div>
+            
+            {/* Строка 3: Вкладки */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('tasks')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+                  activeTab === 'tasks'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                📋 <span className="hidden sm:inline">Задачи</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('finance')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+                  activeTab === 'finance'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                💰 <span className="hidden sm:inline">Финансы</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Десктопный хедер - горизонтальная компоновка */}
+          <div className="hidden md:flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <a href="/" className="text-gray-600 hover:text-gray-900">
+              <a href="/" className="text-gray-600 hover:text-gray-900 min-w-[44px] min-h-[44px] flex items-center justify-center">
                 <Home className="w-5 h-5" />
               </a>
-              <button onClick={() => router.push('/projects')} className="text-gray-600 hover:text-gray-900">
+              <button onClick={() => router.push('/projects')} className="text-gray-600 hover:text-gray-900 min-w-[44px] min-h-[44px] flex items-center justify-center">
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <h1 className="text-xl font-bold text-gray-900">{project.title}</h1>
@@ -727,7 +778,7 @@ export default function ProjectDetailPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('tasks')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                   activeTab === 'tasks'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -737,7 +788,7 @@ export default function ProjectDetailPage() {
               </button>
               <button
                 onClick={() => setActiveTab('finance')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                   activeTab === 'finance'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -747,7 +798,7 @@ export default function ProjectDetailPage() {
               </button>
             </div>
             
-            <button onClick={openEditForm} className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+            <button onClick={openEditForm} className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm min-h-[44px]">
               <Edit className="w-4 h-4" />
               Редактировать
             </button>
@@ -761,7 +812,7 @@ export default function ProjectDetailPage() {
           <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
             <h2 className="font-semibold text-gray-900 mb-3">Редактирование проекта</h2>
             <form onSubmit={updateProject} className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Название проекта *</label>
                   <input
@@ -769,7 +820,7 @@ export default function ProjectDetailPage() {
                     required
                     value={editData.title}
                     onChange={e => setEditData({ ...editData, title: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
                 <div>
@@ -779,18 +830,18 @@ export default function ProjectDetailPage() {
                     required
                     value={editData.client}
                     onChange={e => setEditData({ ...editData, client: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
               </div>
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Адрес</label>
                   <input
                     type="text"
                     value={editData.address}
                     onChange={e => setEditData({ ...editData, address: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
                 <div>
@@ -799,7 +850,7 @@ export default function ProjectDetailPage() {
                     type="number"
                     value={editData.budget}
                     onChange={e => setEditData({ ...editData, budget: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
                 <div>
@@ -808,7 +859,7 @@ export default function ProjectDetailPage() {
                     type="date"
                     value={editData.due_date}
                     onChange={e => setEditData({ ...editData, due_date: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                   />
                 </div>
               </div>
@@ -818,7 +869,7 @@ export default function ProjectDetailPage() {
                   value={editData.description}
                   onChange={e => setEditData({ ...editData, description: e.target.value })}
                   rows={2}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                 />
               </div>
               <div>
@@ -826,7 +877,7 @@ export default function ProjectDetailPage() {
                 <select
                   value={editData.status}
                   onChange={e => setEditData({ ...editData, status: e.target.value as Project['status'] })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                 >
                   <option value="planning">Планирование</option>
                   <option value="active">В работе</option>
@@ -862,7 +913,7 @@ export default function ProjectDetailPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-1">Адрес</div>
-              <div className="font-medium text-gray-900">{project.address || '—'}</div>
+              <div className="font-medium text-gray-900 text-sm">{project.address || '—'}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-1">Бюджет</div>
@@ -872,7 +923,7 @@ export default function ProjectDetailPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-1">Срок</div>
-              <div className="font-medium text-gray-900">
+              <div className="font-medium text-gray-900 text-sm">
                 {project.due_date ? new Date(project.due_date).toLocaleDateString('ru-RU') : '—'}
               </div>
             </div>
@@ -887,7 +938,7 @@ export default function ProjectDetailPage() {
 
         {/* Компактный блок статистики */}
         <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Прогресс задач */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -909,7 +960,7 @@ export default function ProjectDetailPage() {
                   </span>
                   <button 
                     onClick={() => setShowBudgetDetails(!showBudgetDetails)}
-                    className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50 transition-colors"
+                    className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
                     title={showBudgetDetails ? 'Скрыть детали' : 'Показать детали'}
                   >
                     {showBudgetDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -929,7 +980,7 @@ export default function ProjectDetailPage() {
           {showBudgetDetails && sortedCategories.length > 0 && (
             <div className="mt-4 pt-4 border-t">
               <h4 className="text-xs font-semibold text-gray-700 mb-3">Бюджет по категориям:</h4>
-              <div className="grid md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {sortedCategories.map(([category, amount]) => {
                   const percent = project.budget ? Math.round((amount / project.budget) * 100) : 0;
                   return (
@@ -960,11 +1011,11 @@ export default function ProjectDetailPage() {
 
         {/* Контент вкладки: Задачи */}
         {activeTab === 'tasks' && (
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4 border-b flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">Задачи ({tasks.length})</h2>
-                <button onClick={() => setShowTaskForm(!showTaskForm)} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded">
+                <button onClick={() => setShowTaskForm(!showTaskForm)} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded min-h-[44px]">
                   <Plus className="w-4 h-4" />
                   Добавить
                 </button>
@@ -981,7 +1032,7 @@ export default function ProjectDetailPage() {
                       required
                       value={taskData.title}
                       onChange={e => setTaskData({ ...taskData, title: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                       placeholder="Название задачи"
                     />
                   </div>
@@ -991,7 +1042,7 @@ export default function ProjectDetailPage() {
                       value={taskData.description}
                       onChange={e => setTaskData({ ...taskData, description: e.target.value })}
                       rows={2}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                       placeholder="Описание задачи"
                     />
                   </div>
@@ -1001,7 +1052,7 @@ export default function ProjectDetailPage() {
                       <select
                         value={taskData.priority}
                         onChange={e => setTaskData({ ...taskData, priority: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                       >
                         <option value="3">Низкий</option>
                         <option value="2">Средний</option>
@@ -1014,7 +1065,7 @@ export default function ProjectDetailPage() {
                         type="date"
                         value={taskData.due_date}
                         onChange={e => setTaskData({ ...taskData, due_date: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
                       />
                     </div>
                   </div>
@@ -1022,14 +1073,14 @@ export default function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowTaskForm(false)}
-                      className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+                      className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
                       disabled={isCreatingTask}
                     >
                       Отмена
                     </button>
                     <button
                       type="submit"
-                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
                       disabled={isCreatingTask}
                     >
                       {isCreatingTask ? 'Создание...' : 'Создать'}
@@ -1058,8 +1109,8 @@ export default function ProjectDetailPage() {
 
                   return sortedTasks.map(task => (
                   <div key={task.id} className="p-3 hover:bg-gray-50 flex items-start gap-3">
-                    <button onClick={() => toggleTaskStatus(task.id, task.status)} className="mt-0.5 text-gray-400 hover:text-gray-600">
-                      {task.status === 'done' ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Circle className="w-5 h-5" />}
+                    <button onClick={() => toggleTaskStatus(task.id, task.status)} className="mt-0.5 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center">
+                      {task.status === 'done' ? <CheckCircle2 className="w-6 h-6 text-green-600" /> : <Circle className="w-6 h-6" />}
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-gray-500' : 'text-gray-900'}`}>
@@ -1074,8 +1125,8 @@ export default function ProjectDetailPage() {
                         {task.due_date && <span className="text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('ru-RU')}</span>}
                       </div>
                     </div>
-                    <button onClick={() => deleteTask(task.id)} className="text-gray-400 hover:text-red-600 mt-0.5">
-                      <X className="w-4 h-4" />
+                    <button onClick={() => deleteTask(task.id)} className="text-gray-400 hover:text-red-600 mt-0.5 min-w-[44px] min-h-[44px] flex items-center justify-center">
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
                   ));
@@ -1102,7 +1153,7 @@ export default function ProjectDetailPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Введите заметки по проекту..."
-                className="w-full h-[calc(100vh-500px)] min-h-[300px] px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono"
+                className="w-full h-[calc(100vh-500px)] min-h-[300px] px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-[16px]"
                 style={{ lineHeight: '1.5' }}
               />
               <div className="mt-2 text-xs text-gray-500">
@@ -1123,7 +1174,7 @@ export default function ProjectDetailPage() {
                 {selectedInvoices.size > 0 && (
                   <button
                     onClick={unlinkSelectedInvoices}
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200"
+                    className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200 min-h-[44px]"
                   >
                     <X className="w-3 h-3" />
                     Отвязать ({selectedInvoices.size})
@@ -1134,7 +1185,7 @@ export default function ProjectDetailPage() {
                 {uploadProgress && (
                   <span className="text-xs text-gray-600 mr-2">{uploadProgress}</span>
                 )}
-                <label className="flex items-center gap-1 px-2 py-1 text-sm text-green-600 hover:bg-green-50 rounded cursor-pointer">
+                <label className="flex items-center gap-1 px-2 py-1 text-sm text-green-600 hover:bg-green-50 rounded cursor-pointer min-h-[44px]">
                   <Upload className="w-4 h-4" />
                   {uploading ? 'Загрузка...' : 'Загрузить'}
                   <input
@@ -1146,7 +1197,7 @@ export default function ProjectDetailPage() {
                     className="hidden"
                   />
                 </label>
-                <button onClick={loadAvailableInvoices} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded">
+                <button onClick={loadAvailableInvoices} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded min-h-[44px]">
                   <Plus className="w-4 h-4" />
                   Привязать
                 </button>
@@ -1267,7 +1318,9 @@ export default function ProjectDetailPage() {
               {invoices.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Счетов пока нет</div>
               ) : (
-                <div>
+                <>
+                  {/* Десктопная таблица - скрыта на мобильных */}
+                  <div className="hidden md:block">
                   {/* Заголовки таблицы */}
                   <div className="sticky top-0 bg-gray-50 border-b px-3 py-2 grid grid-cols-12 gap-2 text-xs font-medium text-gray-600">
                     <div className="col-span-1 flex items-center">
@@ -1275,7 +1328,7 @@ export default function ProjectDetailPage() {
                         type="checkbox"
                         checked={selectedInvoices.size === invoices.length && invoices.length > 0}
                         onChange={toggleAllInvoices}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        className="min-w-[20px] min-h-[20px] text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                       />
                     </div>
                     <div className="col-span-2">Счет</div>
@@ -1300,7 +1353,7 @@ export default function ProjectDetailPage() {
                           type="checkbox"
                           checked={selectedInvoices.has(invoice.id)}
                           onChange={() => toggleInvoiceSelection(invoice.id)}
-                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          className="min-w-[20px] min-h-[20px] text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                         />
                       </div>
                       
@@ -1351,7 +1404,7 @@ export default function ProjectDetailPage() {
                       <div className="col-span-1 text-right">
                         <button 
                           onClick={() => unlinkInvoice(invoice.id)} 
-                          className="text-gray-400 hover:text-red-600 p-1"
+                          className="text-gray-400 hover:text-red-600 p-1 min-w-[44px] min-h-[44px] flex items-center justify-center"
                           title="Отвязать счет"
                         >
                           <X className="w-4 h-4" />
@@ -1359,7 +1412,88 @@ export default function ProjectDetailPage() {
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+
+                  {/* Мобильные карточки - показаны только на мобильных */}
+                  <div className="md:hidden divide-y">
+                    {filteredInvoices.map(invoice => (
+                      <div 
+                        key={invoice.id} 
+                        className={`p-4 transition-colors ${
+                          selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 mb-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedInvoices.has(invoice.id)}
+                            onChange={() => toggleInvoiceSelection(invoice.id)}
+                            className="min-w-[32px] min-h-[32px] text-blue-600 rounded border-gray-300 focus:ring-blue-500 mt-1"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start gap-2 mb-2">
+                              <FileText className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-900 text-base mb-1">{invoice.invoice_number}</div>
+                                <div className="text-sm text-gray-700 font-medium mb-1">
+                                  {invoice.suppliers?.name || '—'}
+                                </div>
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium border ${
+                                  invoice.suppliers?.category ? categoryColors[invoice.suppliers.category] : 'bg-gray-100 text-gray-700 border-gray-200'
+                                }`}>
+                                  {categoryLabels[(invoice.suppliers?.category || 'other') as SupplierCategory] || 'Без категории'}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
+                              <div>
+                                <div className="text-xs text-gray-500 mb-0.5">Дата</div>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-gray-500 mb-0.5">Сумма</div>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {invoice.total_amount ? `${invoice.total_amount.toLocaleString('ru-RU')} ₽` : '—'}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {invoice.vat_amount && (
+                              <div className="mt-2 text-xs text-gray-600">
+                                НДС: {invoice.vat_amount.toLocaleString('ru-RU')} ₽
+                              </div>
+                            )}
+                            
+                            <div className="flex gap-2 mt-3">
+                              {invoice.file_url && (
+                                <a 
+                                  href={invoice.file_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex-1 text-center px-3 py-2 text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg min-h-[44px] flex items-center justify-center gap-2"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  📎 Открыть файл
+                                </a>
+                              )}
+                              <button 
+                                onClick={() => unlinkInvoice(invoice.id)} 
+                                className="px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg min-h-[44px] flex items-center justify-center gap-1"
+                                title="Отвязать счет"
+                              >
+                                <X className="w-4 h-4" />
+                                Отвязать
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
