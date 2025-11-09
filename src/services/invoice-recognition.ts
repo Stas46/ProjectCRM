@@ -147,4 +147,4 @@ export const createInvoiceRecognitionService = createMockService<InvoiceRecognit
 );
 
 // Экспорт экземпляра сервиса для использования в приложении
-export const invoiceRecognitionService = createInvoiceRecognitionService();
+export const invoiceRecognitionService = createInvoiceRecognitionService;
