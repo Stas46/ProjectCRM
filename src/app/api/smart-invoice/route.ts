@@ -414,7 +414,12 @@ async function extractTextFromExcel(buffer: Buffer, filename: string): Promise<s
     
     // Путь к Python скрипту
     const scriptPath = path.join(process.cwd(), 'python-scripts', 'office_to_text.py');
-    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    const pythonExecutable = process.platform === 'win32' 
+      ? 'python' 
+      : 'python3';
+    
+    console.log(`🐍 Запуск Python: ${pythonExecutable} ${scriptPath}`);
+    logger.info('Извлечение текста из Excel', { scriptPath, filename });
     
     // Запускаем Python скрипт
     const result = await new Promise<any>((resolve, reject) => {
@@ -432,17 +437,42 @@ async function extractTextFromExcel(buffer: Buffer, filename: string): Promise<s
       });
       
       python.on('close', (code) => {
+        console.log(`🔍 office_to_text.py завершен с кодом: ${code}`);
+        console.log(`📤 STDOUT (${stdout.length} символов):`, stdout.substring(0, 500));
+        console.log(`📤 STDERR (${stderr.length} символов):`, stderr.substring(0, 500));
+        
+        logger.info('Python office_to_text завершен', { 
+          code, 
+          stdoutLength: stdout.length, 
+          stderrLength: stderr.length 
+        });
+        
         if (code !== 0) {
+          logger.error('office_to_text.py завершился с ошибкой', { code, stderr });
           reject(new Error(stderr || 'Ошибка выполнения office_to_text.py'));
           return;
         }
         
         try {
-          const result = JSON.parse(stdout);
+          const result = JSON.parse(stdout.trim());
           resolve(result);
         } catch (error) {
+          logger.error('Ошибка парсинга JSON от office_to_text.py', { 
+            error: String(error), 
+            stdout: stdout.substring(0, 1000) 
+          });
           reject(new Error('Ошибка парсинга JSON от office_to_text.py'));
         }
+      });
+      
+      python.on('error', (error) => {
+        console.error('❌ Ошибка запуска office_to_text.py:', error);
+        logger.error('Ошибка запуска office_to_text.py', { 
+          error: String(error),
+          pythonPath: pythonExecutable,
+          scriptPath 
+        });
+        reject(error);
       });
     });
     
