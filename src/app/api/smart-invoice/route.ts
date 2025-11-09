@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Invoice, CreateInvoice, ParsedInvoiceData } from '@/types/invoice';
 import type { Supplier, CreateSupplier } from '@/types/supplier';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '@/lib/logger';
 
 const execAsync = promisify(exec);
 
@@ -20,9 +21,13 @@ const execAsync = promisify(exec);
 // Конфигурация
 // ============================================
 
+// Путь к Google credentials (относительно корня проекта)
+const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 
+  path.join(process.cwd(), 'google-credentials.json');
+
 // Google Vision API
 const vision = new ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  keyFilename: credentialsPath,
 });
 
 // Supabase с service_role ключом для записи
@@ -177,7 +182,10 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<any[]> {
     
     // Путь к Python скрипту
     const scriptPath = path.join(process.cwd(), 'python-scripts', 'pdf_to_png.py');
-    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    // Используем python3 для Linux/Mac, python для Windows
+    const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+    
+    logger.info(`Конвертация PDF в PNG (все страницы)`, { tempId, dpi: 200 });
     
     // Запускаем Python скрипт
     const result = await runPdfToPngScript(pythonExecutable, scriptPath, tempPdfPath, 200);
@@ -198,6 +206,7 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<any[]> {
     
   } catch (error) {
     console.error('❌ Ошибка конвертации PDF:', error);
+    logger.error('Ошибка конвертации PDF', { error: String(error), tempId });
     throw error;
   }
 }
@@ -219,7 +228,10 @@ async function convertPdfToImage(pdfBuffer: Buffer): Promise<Buffer> {
     
     // Путь к Python скрипту
     const scriptPath = path.join(process.cwd(), 'python-scripts', 'pdf_to_png.py');
-    const pythonExecutable = 'C:/Users/Stas/AppData/Local/Programs/Python/Python313/python.exe';
+    // Используем python3 для Linux/Mac, python для Windows
+    const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+    
+    logger.info(`Конвертация PDF в PNG (первая страница)`, { dpi: 200 });
     
     // Запускаем Python скрипт
     const result = await runPdfToPngScript(pythonExecutable, scriptPath, tempPdfPath, 200);
@@ -492,6 +504,7 @@ async function parseInvoiceWithPython(text: string): Promise<ParsedInvoiceData> 
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID().substring(0, 8);
   console.log(`\n📨 [${requestId}] Новый запрос на распознавание счета`);
+  logger.info(`Новый запрос на распознавание счета`, { requestId });
   
   try {
     const formData = await request.formData();
@@ -499,10 +512,13 @@ export async function POST(request: NextRequest) {
     const projectId = formData.get('project_id') as string | null;
     
     if (!file) {
+      logger.error('Файл не найден в запросе', { requestId });
       return NextResponse.json({ error: 'Файл не найден' }, { status: 400 });
     }
     
     console.log(`📄 Файл: ${file.name} (${file.size} байт)`);
+    logger.info(`Обработка файла`, { requestId, fileName: file.name, fileSize: file.size, projectId });
+    
     if (projectId) {
       console.log(`🔗 Привязка к проекту: ${projectId}`);
     }
@@ -515,7 +531,9 @@ export async function POST(request: NextRequest) {
     if (!isExcel) {
       try {
         fileUrl = await uploadFileToStorage(file);
+        logger.info('Файл загружен в Storage', { requestId, fileUrl });
       } catch (storageError) {
+        logger.error('Ошибка загрузки в Storage', { requestId, error: String(storageError) });
         const errorMessage = storageError instanceof Error ? storageError.message : 'Ошибка загрузки файла в Storage';
         console.error('❌ Storage error:', errorMessage);
         return NextResponse.json({ 
@@ -599,8 +617,17 @@ export async function POST(request: NextRequest) {
     
   } catch (error) {
     console.error(`❌ [${requestId}] Ошибка:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    logger.error(`Критическая ошибка обработки счета`, { 
+      requestId, 
+      error: errorMessage,
+      stack: errorStack
+    });
+    
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Неизвестная ошибка' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
