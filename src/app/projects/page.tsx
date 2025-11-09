@@ -268,8 +268,8 @@ export default function ProjectsPage() {
                 <div className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="font-semibold text-gray-900 text-lg">{project.title}</h3>
-                    <span className={`px-2 py-1 text-xs rounded border ${statusConfig[project.status].color}`}>
-                      {statusConfig[project.status].label}
+                    <span className={`px-2 py-1 text-xs rounded border ${statusConfig[project.status as keyof typeof statusConfig].color}`}>
+                      {statusConfig[project.status as keyof typeof statusConfig].label}
                     </span>
                   </div>
 
