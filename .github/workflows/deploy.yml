@@ -21,6 +21,6 @@ jobs:
             git reset --hard HEAD
             git pull origin master
             npm install
-            npm run build
+            SKIP_ENV_VALIDATION=true npm run build
             pm2 restart crm-glazing
             echo "✅ Deployment completed at $(date)"

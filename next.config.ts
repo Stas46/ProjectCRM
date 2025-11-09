@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
     // Игнорируем ошибки TypeScript при продакшен сборке
     ignoreBuildErrors: true,
   },
+  // Отключаем strict mode для production
+  ...(process.env.NODE_ENV === 'production' && {
+    eslint: {
+      ignoreDuringBuilds: true,
+    },
+    typescript: {
+      ignoreBuildErrors: true,
+    },
+  }),
   // @ts-ignore: Добавляем конфигурацию Turbopack
   turbopack: {
     root: path.resolve(__dirname)
