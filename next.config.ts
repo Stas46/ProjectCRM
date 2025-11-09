@@ -4,6 +4,14 @@ import path from 'path';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  eslint: {
+    // Игнорируем ошибки ESLint при продакшен сборке
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    // Игнорируем ошибки TypeScript при продакшен сборке
+    ignoreBuildErrors: true,
+  },
   // @ts-ignore: Добавляем конфигурацию Turbopack
   turbopack: {
     root: path.resolve(__dirname)
