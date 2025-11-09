@@ -1,0 +1,318 @@
+[
+  {
+    "timestamp": "2025-11-09T13:10:24.855Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "4efc7d44"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:24.878Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "4efc7d44",
+      "fileName": "счет 5146 от 06.11.25.jpg",
+      "fileSize": 212607,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:25.425Z",
+    "level": "info",
+    "message": "Файл загружен в Storage",
+    "details": {
+      "requestId": "4efc7d44",
+      "fileUrl": "https://fpnugtlchxigwpqwiczc.supabase.co/storage/v1/object/public/invoice-files/invoices/1762693824881-nrdha8.jpg"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:27.127Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "e3787219"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:27.319Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "e3787219",
+      "fileName": "Счет покупателю 00000009915 от 07.11.2025.pdf",
+      "fileSize": 246686,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:28.021Z",
+    "level": "info",
+    "message": "Файл загружен в Storage",
+    "details": {
+      "requestId": "e3787219",
+      "fileUrl": "https://fpnugtlchxigwpqwiczc.supabase.co/storage/v1/object/public/invoice-files/invoices/1762693827321-j4lvcn.pdf"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:28.027Z",
+    "level": "info",
+    "message": "Конвертация PDF в PNG (все страницы)",
+    "details": {
+      "tempId": "eb4fc6a1-257f-41aa-9ee4-8e899121dc88",
+      "dpi": 200
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:28.598Z",
+    "level": "info",
+    "message": "Python скрипт завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 1026231,
+      "stderrLength": 0,
+      "stdoutPreview": "{\r\n  \"success\": true,\r\n  \"page_count\": 2,\r\n  \"images\": [\r\n    {\r\n      \"page\": 1,\r\n      \"base64\": \"iVBORw0KGgoAAAANSUhEUgAABnYAAAkjCAIAAACzq+aSAAAACXBIWXMAAB7CAAAewgFu0HU+AAYQwUlEQVR4nOy9edxP1fr/v0UZ",
+      "stderrPreview": ""
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:28.600Z",
+    "level": "info",
+    "message": "Python результат распарсен успешно",
+    "details": {
+      "success": true
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:32.208Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "ef52e7de"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:32.259Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "ef52e7de",
+      "fileName": "doc17970620251009131414.pdf",
+      "fileSize": 341781,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:33.183Z",
+    "level": "info",
+    "message": "Файл загружен в Storage",
+    "details": {
+      "requestId": "ef52e7de",
+      "fileUrl": "https://fpnugtlchxigwpqwiczc.supabase.co/storage/v1/object/public/invoice-files/invoices/1762693832260-f1yzu.pdf"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:33.191Z",
+    "level": "info",
+    "message": "Конвертация PDF в PNG (все страницы)",
+    "details": {
+      "tempId": "d0fd6116-95f0-4075-abf5-587d3a22cf2c",
+      "dpi": 200
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:33.914Z",
+    "level": "info",
+    "message": "Python скрипт завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 2395173,
+      "stderrLength": 0,
+      "stdoutPreview": "{\r\n  \"success\": true,\r\n  \"page_count\": 2,\r\n  \"images\": [\r\n    {\r\n      \"page\": 1,\r\n      \"base64\": \"iVBORw0KGgoAAAANSUhEUgAABnUAAAkiCAIAAACTwI40AAAACXBIWXMAAB7CAAAewgFu0HU+ABWtNUlEQVR4nOydd1hWV574d//b",
+      "stderrPreview": ""
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:33.917Z",
+    "level": "info",
+    "message": "Python результат распарсен успешно",
+    "details": {
+      "success": true
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:39.945Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "68dbb334"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:40.153Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "68dbb334",
+      "fileName": "Счет на оплату № УТ-905 от 07.11.2025 (2).xlsx",
+      "fileSize": 20503,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:40.166Z",
+    "level": "info",
+    "message": "Извлечение текста из Excel",
+    "details": {
+      "scriptPath": "C:\\Users\\Stas\\Projects\\CRM CLAUDE\\glazing-crm\\python-scripts\\office_to_text.py",
+      "filename": "Счет на оплату № УТ-905 от 07.11.2025 (2).xlsx"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:10:42.705Z",
+    "level": "info",
+    "message": "Python office_to_text завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 3696,
+      "stderrLength": 0
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:35:12.734Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "ea4a47a7",
+      "fileName": "Счет покупателю 00000009557 от 29.10.2025.pdf",
+      "fileSize": 247281,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:35:14.089Z",
+    "level": "info",
+    "message": "Файл загружен в Storage",
+    "details": {
+      "requestId": "ea4a47a7",
+      "fileUrl": "https://fpnugtlchxigwpqwiczc.supabase.co/storage/v1/object/public/invoice-files/invoices/1762695312735-m46rva.pdf"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:35:14.106Z",
+    "level": "info",
+    "message": "Конвертация PDF в PNG (все страницы)",
+    "details": {
+      "tempId": "76575037-9297-435b-ae83-129096428788",
+      "dpi": 200
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:35:14.740Z",
+    "level": "info",
+    "message": "Python скрипт завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 1058555,
+      "stderrLength": 0,
+      "stdoutPreview": "{\r\n  \"success\": true,\r\n  \"page_count\": 2,\r\n  \"images\": [\r\n    {\r\n      \"page\": 1,\r\n      \"base64\": \"iVBORw0KGgoAAAANSUhEUgAABnYAAAkjCAIAAACzq+aSAAAACXBIWXMAAB7CAAAewgFu0HU+AAYsCElEQVR4nOy9edxP1fr/v0UZ",
+      "stderrPreview": ""
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:04.984Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "510c03ab"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:04.991Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "510c03ab",
+      "fileName": "Счет № 1010 от 12.10.2025.pdf",
+      "fileSize": 8448,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:05.947Z",
+    "level": "info",
+    "message": "Файл загружен в Storage",
+    "details": {
+      "requestId": "510c03ab",
+      "fileUrl": "https://fpnugtlchxigwpqwiczc.supabase.co/storage/v1/object/public/invoice-files/invoices/1762695484993-jhmnda.pdf"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:05.985Z",
+    "level": "info",
+    "message": "Конвертация PDF в PNG (все страницы)",
+    "details": {
+      "tempId": "1eb19af3-bfcd-4ee3-a2cb-821b5f3c817d",
+      "dpi": 200
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:06.463Z",
+    "level": "info",
+    "message": "Python скрипт завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 208586,
+      "stderrLength": 0,
+      "stdoutPreview": "{\r\n  \"success\": true,\r\n  \"page_count\": 1,\r\n  \"images\": [\r\n    {\r\n      \"page\": 1,\r\n      \"base64\": \"iVBORw0KGgoAAAANSUhEUgAABncAAAkkCAIAAABBbL0UAAAACXBIWXMAAB7CAAAewgFu0HU+AAJiHklEQVR4nOyde7wO1f7HR5vc",
+      "stderrPreview": ""
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:38:06.467Z",
+    "level": "info",
+    "message": "Python результат распарсен успешно",
+    "details": {
+      "success": true
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:40:44.576Z",
+    "level": "info",
+    "message": "Новый запрос на распознавание счета",
+    "details": {
+      "requestId": "49f7b6c2"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:40:44.589Z",
+    "level": "info",
+    "message": "Обработка файла",
+    "details": {
+      "requestId": "49f7b6c2",
+      "fileName": "Сч№59261.xls",
+      "fileSize": 596480,
+      "projectId": "3d630f63-2a7e-47b9-83d3-49bc1dda6ebc"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:40:44.633Z",
+    "level": "info",
+    "message": "Извлечение текста из Excel",
+    "details": {
+      "scriptPath": "C:\\Users\\Stas\\Projects\\CRM CLAUDE\\glazing-crm\\python-scripts\\office_to_text.py",
+      "filename": "Сч№59261.xls"
+    }
+  },
+  {
+    "timestamp": "2025-11-09T13:40:45.530Z",
+    "level": "info",
+    "message": "Python office_to_text завершен",
+    "details": {
+      "code": 0,
+      "stdoutLength": 1937,
+      "stderrLength": 0
+    }
+  }
+]

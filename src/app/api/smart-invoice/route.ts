@@ -106,60 +106,88 @@ async function getOrCreateSupplier(
 // Функция: Загрузка файла в Storage
 // ============================================
 async function uploadFileToStorage(file: File): Promise<string | null> {
-  try {
-    const fileExt = file.name.split('.').pop()?.toLowerCase();
-    
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `invoices/${fileName}`;
-    
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    // Определяем MIME-type
-    // Для Excel файлов используем application/octet-stream, т.к. Supabase не поддерживает некоторые Excel MIME-типы
-    let contentType = file.type;
-    const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
-    
-    if (isExcel) {
-      contentType = 'application/octet-stream';
-    } else if (fileExt === 'pdf') {
-      contentType = 'application/pdf';
-    } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
-      contentType = 'image/jpeg';
-    } else if (fileExt === 'png') {
-      contentType = 'image/png';
-    }
-    
-    const { data, error } = await supabase.storage
-      .from('invoice-files')
-      .upload(filePath, buffer, {
-        contentType: contentType,
-        upsert: false,
-      });
-    
-    if (error) {
-      console.error('❌ Ошибка загрузки файла в Storage:', error);
+  const maxRetries = 3;
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
       
-      // Специальное сообщение для отсутствующего bucket
-      if (error.message?.includes('Bucket not found') || (error as any).statusCode === '404') {
-        throw new Error('Bucket "invoice-files" не найден в Supabase Storage. Проверьте настройки Storage');
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `invoices/${fileName}`;
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      // Определяем MIME-type
+      // Для Excel файлов используем application/octet-stream, т.к. Supabase не поддерживает некоторые Excel MIME-типы
+      let contentType = file.type;
+      const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
+      
+      if (isExcel) {
+        contentType = 'application/octet-stream';
+      } else if (fileExt === 'pdf') {
+        contentType = 'application/pdf';
+      } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
+        contentType = 'image/jpeg';
+      } else if (fileExt === 'png') {
+        contentType = 'image/png';
       }
       
-      return null;
+      const { data, error } = await supabase.storage
+        .from('invoice-files')
+        .upload(filePath, buffer, {
+          contentType: contentType,
+          upsert: false,
+        });
+      
+      if (error) {
+        console.error(`❌ Ошибка загрузки файла в Storage (попытка ${attempt}/${maxRetries}):`, error);
+        
+        // Специальное сообщение для отсутствующего bucket
+        if (error.message?.includes('Bucket not found') || (error as any).statusCode === '404') {
+          throw new Error('Bucket "invoice-files" не найден в Supabase Storage. Проверьте настройки Storage');
+        }
+        
+        lastError = error;
+        
+        // Если это не последняя попытка, ждём перед повтором
+        if (attempt < maxRetries) {
+          const delay = attempt * 1000; // 1s, 2s, 3s
+          console.log(`⏳ Повтор через ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        return null;
+      }
+      
+      // Получаем публичный URL
+      const { data: urlData } = supabase.storage
+        .from('invoice-files')
+        .getPublicUrl(filePath);
+      
+      console.log(`✅ Файл загружен: ${urlData.publicUrl}`);
+      return urlData.publicUrl;
+      
+    } catch (error) {
+      console.error(`❌ Ошибка uploadFileToStorage (попытка ${attempt}/${maxRetries}):`, error);
+      lastError = error;
+      
+      // Если это сетевая ошибка и не последняя попытка, пробуем снова
+      if (attempt < maxRetries && (error as any).code === 'ECONNRESET') {
+        const delay = attempt * 1000;
+        console.log(`⏳ Повтор через ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      throw error; // Пробрасываем ошибку дальше
     }
-    
-    // Получаем публичный URL
-    const { data: urlData } = supabase.storage
-      .from('invoice-files')
-      .getPublicUrl(filePath);
-    
-    console.log(`✅ Файл загружен: ${urlData.publicUrl}`);
-    return urlData.publicUrl;
-    
-  } catch (error) {
-    console.error('❌ Ошибка uploadFileToStorage:', error);
-    throw error; // Пробрасываем ошибку дальше
   }
+
+  // Если все попытки исчерпаны
+  throw lastError || new Error('Не удалось загрузить файл после нескольких попыток');
 }
 
 // ============================================
@@ -653,14 +681,54 @@ export async function POST(request: NextRequest) {
     
     console.log('📦 Данные счета для вставки:', JSON.stringify(newInvoice, null, 2));
     
-    const { data: invoice, error } = await supabase
-      .from('invoices')
-      .insert(newInvoice)
-      .select()
-      .single();
+    // Повторные попытки создания счета в БД
+    let invoice = null;
+    let lastError = null;
+    const maxDbRetries = 3;
     
-    if (error) {
-      console.error('❌ Ошибка создания счета:', error);
+    for (let attempt = 1; attempt <= maxDbRetries; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from('invoices')
+          .insert(newInvoice)
+          .select()
+          .single();
+        
+        if (error) {
+          console.error(`❌ Ошибка создания счета (попытка ${attempt}/${maxDbRetries}):`, error);
+          lastError = error;
+          
+          // Если это не последняя попытка, ждём перед повтором
+          if (attempt < maxDbRetries) {
+            const delay = attempt * 1000;
+            console.log(`⏳ Повтор создания счета через ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          
+          return NextResponse.json({ error: 'Ошибка сохранения счета' }, { status: 500 });
+        }
+        
+        invoice = data;
+        break; // Успешно создали, выходим из цикла
+        
+      } catch (err) {
+        console.error(`❌ Исключение при создании счета (попытка ${attempt}/${maxDbRetries}):`, err);
+        lastError = err;
+        
+        if (attempt < maxDbRetries) {
+          const delay = attempt * 1000;
+          console.log(`⏳ Повтор создания счета через ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        return NextResponse.json({ error: 'Ошибка сохранения счета' }, { status: 500 });
+      }
+    }
+    
+    if (!invoice) {
+      console.error('❌ Не удалось создать счет после всех попыток');
       return NextResponse.json({ error: 'Ошибка сохранения счета' }, { status: 500 });
     }
     

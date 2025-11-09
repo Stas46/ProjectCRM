@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload } from 'lucide-react';
+import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight } from 'lucide-react';
+import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
 
 interface Project {
   id: string;
@@ -33,6 +34,7 @@ interface Invoice {
   total_amount: number | null;
   vat_amount?: number | null;
   file_url?: string | null;
+  created_at?: string;
   suppliers?: {
     name: string;
     category: string;
@@ -66,6 +68,28 @@ const priorityColors = {
   medium: 'text-yellow-600',
   high: 'text-red-600',
 };
+
+const categoryColors: Record<string, string> = {
+  'profiles': 'bg-green-100 text-green-700 border-green-200',
+  'glass_units': 'bg-blue-100 text-blue-700 border-blue-200',
+  'fittings': 'bg-purple-100 text-purple-700 border-purple-200',
+  'accessories': 'bg-pink-100 text-pink-700 border-pink-200',
+  'lifting': 'bg-orange-100 text-orange-700 border-orange-200',
+  'installation': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'logistics': 'bg-teal-100 text-teal-700 border-teal-200',
+  'manufacturing': 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  'fasteners': 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'painting': 'bg-rose-100 text-rose-700 border-rose-200',
+  'trim_strips': 'bg-amber-100 text-amber-700 border-amber-200',
+  'design': 'bg-violet-100 text-violet-700 border-violet-200',
+  'brackets': 'bg-lime-100 text-lime-700 border-lime-200',
+  'other': 'bg-gray-100 text-gray-700 border-gray-200',
+  'additional_work': 'bg-sky-100 text-sky-700 border-sky-200',
+  'general': 'bg-slate-100 text-slate-700 border-slate-200',
+};
+
+// Используем правильный маппинг категорий из типов
+const categoryLabels = expenseCategoryMap;
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -102,6 +126,13 @@ export default function ProjectDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [activeTab, setActiveTab] = useState<'tasks' | 'finance'>('tasks');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [showBudgetDetails, setShowBudgetDetails] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesLastSaved, setNotesLastSaved] = useState<Date | null>(null);
 
   useEffect(() => {
     loadProjectData();
@@ -117,7 +148,7 @@ export default function ProjectDetailPage() {
       const [projectRes, tasksRes, invoicesRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('tasks').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
-        supabase.from('invoices').select('id, invoice_number, invoice_date, total_amount, vat_amount, file_url, project_id, supplier_id').eq('project_id', projectId).order('invoice_date', { ascending: false }),
+        supabase.from('invoices').select('id, invoice_number, invoice_date, total_amount, vat_amount, file_url, project_id, supplier_id, created_at').eq('project_id', projectId).order('created_at', { ascending: false }),
       ]);
 
       if (projectRes.error) {
@@ -152,12 +183,14 @@ export default function ProjectDetailPage() {
             .in('id', supplierIds);
           
           console.log('✅ Поставщики загружены:', suppliers?.length || 0);
+          console.log('📋 Данные поставщиков:', suppliers);
           
           // Добавляем информацию о поставщиках к счетам
           invoicesWithSuppliers.forEach(invoice => {
             const inv = invoice as any;
             if (inv.supplier_id) {
               invoice.suppliers = suppliers?.find(s => s.id === inv.supplier_id);
+              console.log(`Счёт ${invoice.invoice_number}: поставщик ${invoice.suppliers?.name}, категория ${invoice.suppliers?.category}`);
             }
           });
         }
@@ -166,6 +199,7 @@ export default function ProjectDetailPage() {
       setProject(projectRes.data);
       setTasks(tasksRes.data || []);
       setInvoices(invoicesWithSuppliers);
+      setNotes((projectRes.data as any).notes || ''); // Загружаем заметки
     } catch (err) {
       console.error('Ошибка загрузки:', err);
     } finally {
@@ -192,6 +226,38 @@ export default function ProjectDetailPage() {
       console.error('Ошибка:', err);
     }
   };
+
+  const saveNotes = async (notesText: string) => {
+    try {
+      setIsSavingNotes(true);
+      const { supabase } = await import('@/lib/supabase');
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ notes: notesText })
+        .eq('id', projectId);
+
+      if (error) throw error;
+
+      setNotesLastSaved(new Date());
+    } catch (err) {
+      console.error('Ошибка сохранения заметок:', err);
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
+
+  // Автосохранение заметок через 2 секунды после последнего изменения
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (notes !== ((project as any)?.notes || '')) {
+        saveNotes(notes);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [notes]);
+
 
   const openEditForm = () => {
     if (!project) return;
@@ -270,7 +336,10 @@ export default function ProjectDetailPage() {
 
   const createTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreatingTask) return; // Защита от двойных кликов
+    
     try {
+      setIsCreatingTask(true);
       const { supabase } = await import('@/lib/supabase');
 
       const newTask = {
@@ -328,6 +397,8 @@ export default function ProjectDetailPage() {
     } catch (err) {
       console.error('Ошибка создания задачи:', err);
       alert(`Ошибка при создании задачи: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
+    } finally {
+      setIsCreatingTask(false);
     }
   };
 
@@ -419,6 +490,118 @@ export default function ProjectDetailPage() {
     setSelectedInvoices(newSelection);
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const allFiles = Array.from(e.dataTransfer.files);
+    
+    // Логирование для отладки
+    console.log('📎 Перетащено файлов:', allFiles.length);
+    allFiles.forEach((file, idx) => {
+      console.log(`  Файл ${idx + 1}: "${file.name}", type: "${file.type}", size: ${file.size}`);
+    });
+
+    // Поддерживаемые форматы
+    const supportedExtensions = ['.pdf', '.xls', '.xlsx', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.txt'];
+    const supportedMimeTypes = [
+      'application/pdf',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'text/plain'
+    ];
+
+    const validFiles = allFiles.filter(file => {
+      const ext = file.name.toLowerCase();
+      const hasValidExtension = supportedExtensions.some(validExt => ext.endsWith(validExt));
+      const hasValidMimeType = supportedMimeTypes.includes(file.type);
+      return hasValidExtension || hasValidMimeType;
+    });
+
+    const invalidFiles = allFiles.filter(file => {
+      const ext = file.name.toLowerCase();
+      const hasValidExtension = supportedExtensions.some(validExt => ext.endsWith(validExt));
+      const hasValidMimeType = supportedMimeTypes.includes(file.type);
+      return !(hasValidExtension || hasValidMimeType);
+    });
+
+    console.log('✅ Допустимых файлов:', validFiles.length);
+    console.log('❌ Неподдерживаемых файлов:', invalidFiles.length);
+
+    if (validFiles.length === 0) {
+      alert('Поддерживаются только файлы: PDF, Excel (.xls, .xlsx), Word (.doc, .docx), изображения (.jpg, .png), текст (.txt)');
+      return;
+    }
+
+    if (invalidFiles.length > 0) {
+      const proceed = confirm(
+        `Найдено ${invalidFiles.length} неподдерживаемых файлов. Загрузить только допустимые файлы (${validFiles.length} шт.)?`
+      );
+      if (!proceed) return;
+    }
+
+    await uploadInvoices(validFiles);
+  };
+
+  const uploadInvoices = async (files: File[]) => {
+    try {
+      setUploading(true);
+      setUploadProgress(`Загрузка ${files.length} файлов...`);
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress(`Обработка ${i + 1} из ${files.length}: ${file.name}`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('project_id', projectId as string);
+
+        const response = await fetch('/api/smart-invoice', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Ошибка обработки ${file.name}: ${error}`);
+        }
+
+        const result = await response.json();
+        console.log(`✅ Счёт ${file.name} обработан:`, result);
+      }
+
+      setUploadProgress('Все файлы успешно загружены!');
+      setTimeout(() => {
+        setUploadProgress('');
+        setUploading(false);
+      }, 2000);
+
+      await loadProjectData();
+    } catch (err) {
+      console.error('Ошибка загрузки:', err);
+      alert(err instanceof Error ? err.message : 'Ошибка при загрузке счетов');
+      setUploading(false);
+      setUploadProgress('');
+    }
+  };
+
   const toggleAllInvoices = () => {
     if (selectedInvoices.size === invoices.length) {
       setSelectedInvoices(new Set());
@@ -453,57 +636,11 @@ export default function ProjectDetailPage() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    try {
-      setUploading(true);
-      const totalFiles = files.length;
-      let successCount = 0;
-      let errorCount = 0;
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        
-        try {
-          setUploadProgress(`Обработка ${i + 1} из ${totalFiles}: ${file.name}...`);
-
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('project_id', projectId);
-
-          const response = await fetch('/api/smart-invoice', {
-            method: 'POST',
-            body: formData,
-          });
-
-          const responseData = await response.json();
-
-          if (!response.ok) {
-            throw new Error(responseData.error || 'Ошибка загрузки');
-          }
-
-          successCount++;
-        } catch (err) {
-          console.error(`Ошибка файла ${file.name}:`, err);
-          errorCount++;
-        }
-      }
-
-      if (successCount > 0) {
-        setUploadProgress(`✅ Обработано: ${successCount}, ошибок: ${errorCount}`);
-        await loadProjectData();
-      } else {
-        setUploadProgress(`⚠️ Все файлы завершились с ошибкой`);
-      }
-
-      setTimeout(() => setUploadProgress(''), 3000);
-    } catch (err) {
-      console.error('Ошибка:', err);
-      setUploadProgress('❌ Ошибка загрузки');
-      setTimeout(() => setUploadProgress(''), 3000);
-    } finally {
-      setUploading(false);
-      // Сброс input для возможности загрузки тех же файлов снова
-      e.target.value = '';
-    }
+    const allFiles = Array.from(files);
+    await uploadInvoices(allFiles);
+    
+    // Очищаем input для возможности повторной загрузки тех же файлов
+    e.target.value = '';
   };
 
   if (loading) {
@@ -554,26 +691,67 @@ export default function ProjectDetailPage() {
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5); // Топ-5 категорий
 
+  // Фильтрация счетов
+  const filteredInvoices = categoryFilter 
+    ? invoices.filter(inv => inv.suppliers?.category === categoryFilter)
+    : invoices;
+
+  // Список уникальных категорий с количеством счетов
+  const categoriesWithCounts = Object.entries(
+    invoices.reduce((acc, inv) => {
+      const cat = inv.suppliers?.category || 'other';
+      acc[cat] = (acc[cat] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>)
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <a href="/" className="text-gray-600 hover:text-gray-900">
-              <Home className="w-5 h-5" />
-            </a>
-            <button onClick={() => router.push('/projects')} className="text-gray-600 hover:text-gray-900">
-              <ArrowLeft className="w-5 h-5" />
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <a href="/" className="text-gray-600 hover:text-gray-900">
+                <Home className="w-5 h-5" />
+              </a>
+              <button onClick={() => router.push('/projects')} className="text-gray-600 hover:text-gray-900">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-xl font-bold text-gray-900">{project.title}</h1>
+              <span className={`px-2 py-0.5 text-xs rounded ${statusColors[project.status as keyof typeof statusColors]}`}>
+                {statusLabels[project.status as keyof typeof statusLabels]}
+              </span>
+            </div>
+            
+            {/* Вкладки */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('tasks')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'tasks'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                📋 Задачи и процесс
+              </button>
+              <button
+                onClick={() => setActiveTab('finance')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'finance'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                💰 Финансы и счета
+              </button>
+            </div>
+            
+            <button onClick={openEditForm} className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+              <Edit className="w-4 h-4" />
+              Редактировать
             </button>
-            <h1 className="text-xl font-bold text-gray-900">{project.title}</h1>
-            <span className={`px-2 py-0.5 text-xs rounded ${statusColors[project.status as keyof typeof statusColors]}`}>
-              {statusLabels[project.status as keyof typeof statusLabels]}
-            </span>
           </div>
-          <button onClick={openEditForm} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
-            <Edit className="w-4 h-4" />
-            Редактировать
-          </button>
         </div>
       </div>
 
@@ -707,35 +885,58 @@ export default function ProjectDetailPage() {
           )}
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-4">
-          <div className="bg-white rounded-lg shadow-sm p-4 border">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-900">Прогресс задач</h3>
-              <span className="text-sm text-gray-600">{completedTasks} из {totalTasks}</span>
+        {/* Компактный блок статистики */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Прогресс задач */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-900">Прогресс задач</h3>
+                <span className="text-xs text-gray-600">{completedTasks} из {totalTasks} ({progressPercent}%)</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-green-600 h-2 rounded-full transition-all" style={{ width: `${progressPercent}%` }}></div>
+              </div>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-green-600 h-2 rounded-full transition-all" style={{ width: `${progressPercent}%` }}></div>
+
+            {/* Бюджет */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-900">Бюджет проекта</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-600">
+                    {totalInvoices.toLocaleString('ru-RU')} из {project.budget ? project.budget.toLocaleString('ru-RU') : '?'} ₽
+                  </span>
+                  <button 
+                    onClick={() => setShowBudgetDetails(!showBudgetDetails)}
+                    className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50 transition-colors"
+                    title={showBudgetDetails ? 'Скрыть детали' : 'Показать детали'}
+                  >
+                    {showBudgetDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all ${budgetUsed > 90 ? 'bg-red-600' : budgetUsed > 70 ? 'bg-yellow-600' : 'bg-blue-600'}`}
+                  style={{ width: `${Math.min(budgetUsed, 100)}%` }}
+                ></div>
+              </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">{progressPercent}%</div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-4 border">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Бюджет по категориям</h3>
-              <span className="text-sm text-gray-600">
-                {(totalInvoices / 1000).toFixed(1)}к из {project.budget ? (project.budget / 1000).toFixed(1) : '?'}к ₽
-              </span>
-            </div>
-            
-            {sortedCategories.length > 0 ? (
-              <div className="space-y-2">
+          {/* Детали бюджета (сворачиваемые) */}
+          {showBudgetDetails && sortedCategories.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <h4 className="text-xs font-semibold text-gray-700 mb-3">Бюджет по категориям:</h4>
+              <div className="grid md:grid-cols-2 gap-3">
                 {sortedCategories.map(([category, amount]) => {
                   const percent = project.budget ? Math.round((amount / project.budget) * 100) : 0;
                   return (
-                    <div key={category}>
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-gray-700 font-medium">{category}</span>
-                        <span className="text-gray-600">{(amount / 1000).toFixed(1)}к ₽ ({percent}%)</span>
+                    <div key={category} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-700 font-medium">{categoryLabels[category as SupplierCategory] || category}</span>
+                        <span className="text-gray-600">{amount.toLocaleString('ru-RU')} ₽ ({percent}%)</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-1.5">
                         <div
@@ -746,45 +947,15 @@ export default function ProjectDetailPage() {
                     </div>
                   );
                 })}
-                <div className="pt-2 border-t">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-gray-900">Итого использовано:</span>
-                    <span className={`font-semibold ${budgetUsed > 90 ? 'text-red-600' : budgetUsed > 70 ? 'text-yellow-600' : 'text-gray-900'}`}>
-                      {budgetUsed}%
-                    </span>
-                  </div>
-                </div>
               </div>
-            ) : (
-              <div className="text-xs text-gray-500 text-center py-4">Нет данных по категориям</div>
-            )}
-          </div>
-        </div>
-
-        {/* Вкладки */}
-        <div className="bg-white rounded-lg shadow-sm border mb-4">
-          <div className="flex border-b">
-            <button
-              onClick={() => setActiveTab('tasks')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'tasks'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              📋 Задачи и процесс
-            </button>
-            <button
-              onClick={() => setActiveTab('finance')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'finance'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              💰 Финансы и счета
-            </button>
-          </div>
+              <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs">
+                <span className="font-semibold text-gray-900">Итого использовано:</span>
+                <span className={`font-semibold ${budgetUsed > 90 ? 'text-red-600' : budgetUsed > 70 ? 'text-yellow-600' : 'text-gray-900'}`}>
+                  {budgetUsed}%
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Контент вкладки: Задачи */}
@@ -852,25 +1023,40 @@ export default function ProjectDetailPage() {
                       type="button"
                       onClick={() => setShowTaskForm(false)}
                       className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+                      disabled={isCreatingTask}
                     >
                       Отмена
                     </button>
                     <button
                       type="submit"
-                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isCreatingTask}
                     >
-                      Создать
+                      {isCreatingTask ? 'Создание...' : 'Создать'}
                     </button>
                   </div>
                 </form>
               </div>
             )}
 
-            <div className="divide-y max-h-96 overflow-y-auto">
+            <div className="divide-y" style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
               {tasks.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Задач пока нет</div>
               ) : (
-                tasks.map(task => (
+                (() => {
+                  // Сортировка: невыполненные (новые сверху) -> выполненные (старые снизу)
+                  const sortedTasks = [...tasks].sort((a, b) => {
+                    // Сначала группируем по статусу
+                    if (a.status !== b.status) {
+                      return a.status === 'todo' ? -1 : 1;
+                    }
+                    // Внутри группы: невыполненные - от новых к старым, выполненные - от старых к новым
+                    const dateA = new Date(a.created_at).getTime();
+                    const dateB = new Date(b.created_at).getTime();
+                    return a.status === 'todo' ? dateB - dateA : dateA - dateB;
+                  });
+
+                  return sortedTasks.map(task => (
                   <div key={task.id} className="p-3 hover:bg-gray-50 flex items-start gap-3">
                     <button onClick={() => toggleTaskStatus(task.id, task.status)} className="mt-0.5 text-gray-400 hover:text-gray-600">
                       {task.status === 'done' ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Circle className="w-5 h-5" />}
@@ -892,10 +1078,39 @@ export default function ProjectDetailPage() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                ))
+                  ));
+                })()
               )}
             </div>
           </div>
+
+          {/* Блокнот для заметок */}
+          <div className="bg-white rounded-lg shadow-sm border">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">📝 Заметки</h2>
+              {isSavingNotes && (
+                <span className="text-xs text-gray-500">Сохранение...</span>
+              )}
+              {!isSavingNotes && notesLastSaved && (
+                <span className="text-xs text-gray-500">
+                  Сохранено {notesLastSaved.toLocaleTimeString('ru-RU')}
+                </span>
+              )}
+            </div>
+            <div className="p-4">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Введите заметки по проекту..."
+                className="w-full h-[calc(100vh-500px)] min-h-[300px] px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono"
+                style={{ lineHeight: '1.5' }}
+              />
+              <div className="mt-2 text-xs text-gray-500">
+                💡 Заметки автоматически сохраняются через 2 секунды после последнего изменения
+              </div>
+            </div>
+          </div>
+
           </div>
         )}
 
@@ -925,7 +1140,7 @@ export default function ProjectDetailPage() {
                   <input
                     type="file"
                     multiple
-                    accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                    accept=".pdf,.xls,.xlsx,.doc,.docx,.jpg,.jpeg,.png,.txt,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,text/plain"
                     onChange={handleFileUpload}
                     disabled={uploading}
                     className="hidden"
@@ -975,7 +1190,80 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            <div className="divide-y max-h-96 overflow-y-auto">
+            {/* Drag and Drop зона */}
+            {invoices.length === 0 && !uploading && (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`m-4 p-8 border-2 border-dashed rounded-lg text-center transition-colors ${
+                  isDragging 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                }`}
+              >
+                <Upload className={`w-12 h-12 mx-auto mb-3 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
+                <p className="text-sm font-medium text-gray-700 mb-1">
+                  {isDragging ? 'Отпустите файлы для загрузки' : 'Перетащите файлы счетов сюда'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  PDF, Excel, Word, изображения, текстовые файлы
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  или используйте кнопку "Загрузить" выше
+                </p>
+              </div>
+            )}
+
+            {/* Фильтры по категориям */}
+            {invoices.length > 0 && (
+              <div className="p-3 border-b bg-gray-50">
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-xs font-medium text-gray-600">Фильтр:</span>
+                  <button
+                    onClick={() => setCategoryFilter(null)}
+                    className={`px-2 py-1 text-xs rounded-full border ${
+                      !categoryFilter 
+                        ? 'bg-blue-600 text-white border-blue-600' 
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    Все ({invoices.length})
+                  </button>
+                  {categoriesWithCounts.map(([cat, count]) => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`px-2 py-1 text-xs rounded-full border ${
+                        categoryFilter === cat
+                          ? categoryColors[cat] + ' font-medium'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                      }`}
+                    >
+                      {categoryLabels[cat as SupplierCategory] || cat} ({count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div 
+              className={`divide-y relative ${isDragging ? 'ring-2 ring-blue-500 ring-inset bg-blue-50/50' : ''}`}
+              style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {isDragging && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-blue-500/10 backdrop-blur-sm pointer-events-none">
+                  <div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-500 border-dashed">
+                    <Upload className="w-12 h-12 mx-auto mb-2 text-blue-500" />
+                    <p className="text-sm font-medium text-gray-900">Отпустите файлы для загрузки</p>
+                    <p className="text-xs text-gray-600 mt-1">Счета будут автоматически распознаны</p>
+                    <p className="text-xs text-gray-500 mt-1">PDF, Excel, Word, изображения, текст</p>
+                  </div>
+                </div>
+              )}
               {invoices.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Счетов пока нет</div>
               ) : (
@@ -991,15 +1279,16 @@ export default function ProjectDetailPage() {
                       />
                     </div>
                     <div className="col-span-2">Счет</div>
-                    <div className="col-span-3">Поставщик / Категория</div>
-                    <div className="col-span-2">Дата</div>
+                    <div className="col-span-2">Поставщик</div>
+                    <div className="col-span-2">Категория</div>
+                    <div className="col-span-1">Дата</div>
                     <div className="col-span-2 text-right">Сумма</div>
                     <div className="col-span-1 text-right">НДС</div>
                     <div className="col-span-1 text-right"></div>
                   </div>
                   
                   {/* Строки счетов */}
-                  {invoices.map(invoice => (
+                  {filteredInvoices.map(invoice => (
                     <div 
                       key={invoice.id} 
                       className={`px-3 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors ${
@@ -1033,25 +1322,30 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
                       
-                      <div className="col-span-3">
+                      <div className="col-span-2">
                         <div className="text-gray-900 text-xs font-medium truncate">
                           {invoice.suppliers?.name || '—'}
                         </div>
-                        <div className="text-xs text-gray-500 truncate">
-                          {invoice.suppliers?.category || 'Без категории'}
-                        </div>
+                      </div>
+
+                      <div className="col-span-2">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          invoice.suppliers?.category ? categoryColors[invoice.suppliers.category] : 'bg-gray-100 text-gray-700 border-gray-200'
+                        }`}>
+                          {categoryLabels[(invoice.suppliers?.category || 'other') as SupplierCategory] || 'Без категории'}
+                        </span>
                       </div>
                       
-                      <div className="col-span-2 text-xs text-gray-600">
+                      <div className="col-span-1 text-xs text-gray-600">
                         {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
                       </div>
                       
                       <div className="col-span-2 text-right font-medium text-gray-900">
-                        {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к` : '—'}
+                        {invoice.total_amount ? `${invoice.total_amount.toLocaleString('ru-RU')} ₽` : '—'}
                       </div>
                       
                       <div className="col-span-1 text-right text-xs text-gray-600">
-                        {invoice.vat_amount ? `${(invoice.vat_amount / 1000).toFixed(1)}к` : '—'}
+                        {invoice.vat_amount ? `${invoice.vat_amount.toLocaleString('ru-RU')} ₽` : '—'}
                       </div>
                       
                       <div className="col-span-1 text-right">
