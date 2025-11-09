@@ -100,6 +100,17 @@ export type NewSupplier = CreateSupplier;
 export type UpdateSupplier = Partial<Omit<CreateSupplier, 'id' | 'created_at' | 'updated_at'>>;
 
 /**
+ * Сводка расходов по категории
+ */
+export interface ExpenseSummary {
+  category: string;
+  categoryName: string;
+  total: number;
+  count: number;
+  percentage: number;
+}
+
+/**
  * Поставщик с суммами счетов (из view supplier_totals)
  */
 export interface SupplierWithTotals extends Supplier {

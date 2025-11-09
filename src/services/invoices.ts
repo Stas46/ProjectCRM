@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { Invoice, NewInvoice, UpdateInvoice } from '@/types/invoice';
+import { Invoice, CreateInvoice, UpdateInvoice } from '@/types/invoice';
 import { ExpenseSummary, expenseCategoryMap } from '@/types/supplier';
 
 // Получение всех счетов
@@ -65,7 +65,7 @@ export async function getInvoiceById(id: string): Promise<Invoice | null> {
 }
 
 // Создание нового счета
-export async function createInvoice(invoice: NewInvoice): Promise<Invoice | null> {
+export async function createInvoice(invoice: CreateInvoice): Promise<Invoice | null> {
   try {
     const { data, error } = await supabase
       .from('invoices')
