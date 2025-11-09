@@ -21,6 +21,9 @@ export default function SuppliersPage() {
     inn: ''
   });
 
+  // Поиск
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
     loadSuppliers();
   }, []);
@@ -114,9 +117,28 @@ export default function SuppliersPage() {
     }
   }
 
-  const filteredSuppliers = selectedCategory === 'all'
+  let filteredSuppliers = selectedCategory === 'all'
     ? suppliers
     : suppliers.filter(s => s.category === selectedCategory);
+
+  // Поиск
+  if (searchQuery.trim() !== '') {
+    const query = searchQuery.trim().toLowerCase();
+    filteredSuppliers = filteredSuppliers.filter(supplier => {
+      const name = supplier.name?.toLowerCase() || '';
+      const inn = supplier.inn?.toLowerCase() || '';
+      const category = supplier.category?.toLowerCase() || '';
+      const invoiceCount = supplier.invoiceCount?.toString() || '';
+      const totalAmount = supplier.totalAmount?.toString() || '';
+      return (
+        name.includes(query) ||
+        inn.includes(query) ||
+        category.includes(query) ||
+        invoiceCount.includes(query) ||
+        totalAmount.includes(query)
+      );
+    });
+  }
 
   const totalStats = filteredSuppliers.reduce((acc, s) => ({
     suppliers: acc.suppliers + 1,
@@ -195,6 +217,16 @@ export default function SuppliersPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-4">
+        {/* Поиск */}
+        <div className="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 md:mb-4 border">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Поиск по названию, ИНН, категории, сумме..."
+            className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2"
+          />
+        </div>
         {/* Статистика */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
           <div className="bg-white rounded-lg shadow-sm p-3 border">

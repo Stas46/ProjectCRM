@@ -60,6 +60,9 @@ export default function InvoicesPage() {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
+  // Поиск
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
     loadInvoices();
     loadSuppliers();
@@ -298,6 +301,25 @@ export default function InvoicesPage() {
   const filteredInvoices = useMemo(() => {
     let filtered = [...invoices];
 
+    // Поиск
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(inv => {
+        const number = inv.invoice_number?.toLowerCase() || '';
+        const supplierName = inv.suppliers?.name?.toLowerCase() || '';
+        const supplierInn = inv.suppliers?.inn?.toLowerCase() || '';
+        const total = inv.total_amount ? inv.total_amount.toString() : '';
+        const vat = inv.vat_amount ? inv.vat_amount.toString() : '';
+        return (
+          number.includes(query) ||
+          supplierName.includes(query) ||
+          supplierInn.includes(query) ||
+          total.includes(query) ||
+          vat.includes(query)
+        );
+      });
+    }
+
     // Фильтр по проекту
     if (filterProject !== 'all') {
       if (filterProject === 'unlinked') {
@@ -350,7 +372,7 @@ export default function InvoicesPage() {
     }
 
     return filtered;
-  }, [invoices, filterProject, filterSupplier, filterPeriod, customStartDate, customEndDate]);
+  }, [invoices, searchQuery, filterProject, filterSupplier, filterPeriod, customStartDate, customEndDate]);
 
   if (loading) {
     return (
@@ -475,6 +497,16 @@ export default function InvoicesPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-3 md:px-4 py-3 md:py-4">
+        {/* Поиск */}
+        <div className="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 md:mb-4 border">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Поиск по номеру счета, поставщику, ИНН, сумме..."
+            className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2"
+          />
+        </div>
         {/* Фильтры */}
         <div className="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 md:mb-4 border">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-3">

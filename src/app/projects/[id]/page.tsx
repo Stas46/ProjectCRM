@@ -938,40 +938,36 @@ export default function ProjectDetailPage() {
 
         {/* Компактный блок статистики */}
         <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch">
             {/* Прогресс задач */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-gray-900">Прогресс задач</h3>
+            <div className="flex flex-col justify-center h-full">
+              <div className="flex items-center justify-between gap-2 mb-0">
+                <span className="text-xs font-semibold text-gray-900">Прогресс задач</span>
                 <span className="text-xs text-gray-600">{completedTasks} из {totalTasks} ({progressPercent}%)</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-green-600 h-2 rounded-full transition-all" style={{ width: `${progressPercent}%` }}></div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                <div className="bg-green-600 h-1.5 rounded-full transition-all" style={{ width: `${progressPercent}%` }}></div>
               </div>
             </div>
 
             {/* Бюджет */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-gray-900">Бюджет проекта</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600">
-                    {totalInvoices.toLocaleString('ru-RU')} из {project.budget ? project.budget.toLocaleString('ru-RU') : '?'} ₽
-                  </span>
-                  <button 
-                    onClick={() => setShowBudgetDetails(!showBudgetDetails)}
-                    className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
-                    title={showBudgetDetails ? 'Скрыть детали' : 'Показать детали'}
-                  >
-                    {showBudgetDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  </button>
-                </div>
+            <div className="flex flex-col justify-center h-full">
+              <div className="flex items-center justify-between gap-2 mb-0">
+                <span className="text-xs font-semibold text-gray-900">Бюджет проекта</span>
+                <span className="text-xs text-gray-600">&nbsp;</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all ${budgetUsed > 90 ? 'bg-red-600' : budgetUsed > 70 ? 'bg-yellow-600' : 'bg-blue-600'}`}
-                  style={{ width: `${Math.min(budgetUsed, 100)}%` }}
-                ></div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                <div className={`h-1.5 rounded-full transition-all ${budgetUsed > 90 ? 'bg-red-600' : budgetUsed > 70 ? 'bg-yellow-600' : 'bg-blue-600'}`} style={{ width: `${Math.min(budgetUsed, 100)}%` }}></div>
+              </div>
+              <div className="flex items-center justify-end mt-1">
+                <span className="text-xs text-gray-600 font-semibold">{totalInvoices.toLocaleString('ru-RU')} ₽</span>
+                <button 
+                  onClick={() => setShowBudgetDetails(!showBudgetDetails)}
+                  className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50 transition-colors min-w-[28px] min-h-[28px] flex items-center justify-center ml-2"
+                  title={showBudgetDetails ? 'Скрыть детали' : 'Показать детали'}
+                >
+                  {showBudgetDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
               </div>
             </div>
           </div>
@@ -982,7 +978,7 @@ export default function ProjectDetailPage() {
               <h4 className="text-xs font-semibold text-gray-700 mb-3">Бюджет по категориям:</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {sortedCategories.map(([category, amount]) => {
-                  const percent = project.budget ? Math.round((amount / project.budget) * 100) : 0;
+                  const percent = totalInvoices > 0 ? Math.round((amount / totalInvoices) * 100) : 0;
                   return (
                     <div key={category} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
