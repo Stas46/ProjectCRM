@@ -101,6 +101,7 @@ export default function ProjectDetailPage() {
 
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'finance'>('tasks');
 
   useEffect(() => {
     loadProjectData();
@@ -760,15 +761,43 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Задачи ({tasks.length})</h2>
-              <button onClick={() => setShowTaskForm(!showTaskForm)} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded">
-                <Plus className="w-4 h-4" />
-                Добавить
-              </button>
-            </div>
+        {/* Вкладки */}
+        <div className="bg-white rounded-lg shadow-sm border mb-4">
+          <div className="flex border-b">
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className={`px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === 'tasks'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              📋 Задачи и процесс
+            </button>
+            <button
+              onClick={() => setActiveTab('finance')}
+              className={`px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === 'finance'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              💰 Финансы и счета
+            </button>
+          </div>
+        </div>
+
+        {/* Контент вкладки: Задачи */}
+        {activeTab === 'tasks' && (
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4 border-b flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Задачи ({tasks.length})</h2>
+                <button onClick={() => setShowTaskForm(!showTaskForm)} className="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded">
+                  <Plus className="w-4 h-4" />
+                  Добавить
+                </button>
+              </div>
 
             {/* Форма создания задачи */}
             {showTaskForm && (
@@ -867,7 +896,11 @@ export default function ProjectDetailPage() {
               )}
             </div>
           </div>
+          </div>
+        )}
 
+        {/* Контент вкладки: Финансы */}
+        {activeTab === 'finance' && (
           <div className="bg-white rounded-lg shadow-sm border">
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1036,7 +1069,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
