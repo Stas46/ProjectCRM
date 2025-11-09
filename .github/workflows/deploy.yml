@@ -18,6 +18,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/alu.stella-spb.ru
+            git reset --hard HEAD
             git pull origin master
             npm install
             npm run build
