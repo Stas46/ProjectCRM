@@ -369,19 +369,21 @@ export default function InvoicesPage() {
       <div className="bg-white shadow-sm border-b">
         {/* Мобильный хедер */}
         <div className="md:hidden">
-          <div className="px-4 py-3 space-y-3">
-            {/* Строка 1: Навигация + Загрузка */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+          <div className="px-3 py-2">
+            {/* Строка 1: Навигация + Заголовок + Загрузка */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
                 <a href="/" className="text-gray-600 hover:text-gray-900">
                   <Home className="w-5 h-5" />
                 </a>
-                <FileText className="w-5 h-5 text-blue-600" />
-                <h1 className="text-lg font-bold text-gray-900">Счета</h1>
+                <h1 className="text-base font-bold text-gray-900">Счета</h1>
+                <span className="text-xs text-gray-500">
+                  ({filteredInvoices.length})
+                </span>
               </div>
-              <label className="flex items-center gap-2 px-3 min-h-[44px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
+              <label className="flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
                 <Upload className="w-4 h-4" />
-                {uploading ? 'Загрузка...' : 'Загрузить'}
+                {uploading ? '...' : 'Загрузить'}
                 <input
                   type="file"
                   multiple
@@ -392,38 +394,23 @@ export default function InvoicesPage() {
                 />
               </label>
             </div>
-            
-            {/* Строка 2: Счётчики */}
-            <div className="flex items-center gap-3 text-sm">
-              <span className="text-gray-500">
-                ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
-              </span>
-              {selectedInvoices.size > 0 && (
-                <span className="text-blue-600 font-medium">
-                  Выбрано: {selectedInvoices.size}
-                </span>
-              )}
-              {uploadProgress && (
-                <span className="text-gray-600">{uploadProgress}</span>
-              )}
-            </div>
 
-            {/* Строка 3: Действия с выбранными */}
+            {/* Строка 2: Действия с выбранными (только если есть выбранные) */}
             {selectedInvoices.size > 0 && (
               <div className="flex gap-2">
                 <button
                   onClick={openProjectSelector}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 min-h-[44px] text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-blue-600 bg-blue-50 rounded border border-blue-200"
                 >
-                  <LinkIcon className="w-4 h-4" />
-                  Привязать
+                  <LinkIcon className="w-3 h-3" />
+                  Привязать ({selectedInvoices.size})
                 </button>
                 <button
                   onClick={deleteSelectedInvoices}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 min-h-[44px] text-sm text-red-600 hover:bg-red-50 rounded border border-red-200"
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-red-600 bg-red-50 rounded border border-red-200"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Удалить ({selectedInvoices.size})
+                  <Trash2 className="w-3 h-3" />
+                  Удалить
                 </button>
               </div>
             )}
@@ -432,13 +419,13 @@ export default function InvoicesPage() {
 
         {/* Десктопный хедер */}
         <div className="hidden md:block">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <a href="/" className="text-gray-600 hover:text-gray-900">
                 <Home className="w-5 h-5" />
               </a>
               <FileText className="w-5 h-5 text-blue-600" />
-              <h1 className="text-xl font-bold text-gray-900">Счета</h1>
+              <h1 className="text-lg font-bold text-gray-900">Счета</h1>
               <span className="text-sm text-gray-500">
                 ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
               </span>
@@ -487,10 +474,10 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-3 md:px-4 py-3 md:py-4">
         {/* Фильтры */}
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-lg shadow-sm p-3 md:p-4 mb-3 md:mb-4 border">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Проект
@@ -498,7 +485,7 @@ export default function InvoicesPage() {
               <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
-                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
+                className="w-full px-2 md:px-3 py-1.5 md:py-2 border rounded text-[16px] md:text-sm"
               >
                 <option value="all">Все проекты</option>
                 <option value="unlinked">Без проекта</option>
@@ -517,7 +504,7 @@ export default function InvoicesPage() {
               <select
                 value={filterSupplier}
                 onChange={(e) => setFilterSupplier(e.target.value)}
-                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
+                className="w-full px-2 md:px-3 py-1.5 md:py-2 border rounded text-[16px] md:text-sm"
               >
                 <option value="all">Все поставщики</option>
                 {suppliers.map(supplier => (
@@ -535,7 +522,7 @@ export default function InvoicesPage() {
               <select
                 value={filterPeriod}
                 onChange={(e) => setFilterPeriod(e.target.value)}
-                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
+                className="w-full px-2 md:px-3 py-1.5 md:py-2 border rounded text-[16px] md:text-sm"
               >
                 <option value="all">Весь период</option>
                 <option value="today">Сегодня</option>
@@ -557,7 +544,7 @@ export default function InvoicesPage() {
                     type="date"
                     value={customStartDate}
                     onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
+                    className="w-full px-2 md:px-3 py-1.5 md:py-2 border rounded text-[16px] md:text-sm"
                   />
                 </div>
                 <div className="flex-1">
@@ -568,7 +555,7 @@ export default function InvoicesPage() {
                     type="date"
                     value={customEndDate}
                     onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
+                    className="w-full px-2 md:px-3 py-1.5 md:py-2 border rounded text-[16px] md:text-sm"
                   />
                 </div>
               </div>
@@ -584,7 +571,7 @@ export default function InvoicesPage() {
                     setCustomStartDate('');
                     setCustomEndDate('');
                   }}
-                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded border min-h-[44px] w-full md:w-auto"
+                  className="px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm text-gray-600 hover:bg-gray-100 rounded border w-full md:w-auto"
                 >
                   Сбросить
                 </button>
@@ -882,94 +869,81 @@ export default function InvoicesPage() {
             </div>
 
             {/* Мобильные карточки */}
-            <div className="md:hidden space-y-3">
+            <div className="md:hidden space-y-2">
               {filteredInvoices.map((invoice, idx) => (
                 <div 
                   key={invoice.id}
-                  className={`bg-white rounded-lg shadow-sm border p-4 ${
+                  className={`bg-white rounded-lg shadow-sm border p-3 ${
                     selectedInvoices.has(invoice.id) ? 'border-blue-500 bg-blue-50' : ''
                   }`}
                 >
-                  {/* Строка 1: Чекбокс + Номер счета + Действия */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3 flex-1">
-                      <input
-                        type="checkbox"
-                        checked={selectedInvoices.has(invoice.id)}
-                        onChange={() => toggleInvoiceSelection(invoice.id)}
-                        className="min-w-[32px] min-h-[32px] text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900 text-base mb-1">
-                          {invoice.invoice_number}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          № {invoices.length - idx} • {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
-                        </div>
+                  {/* Строка 1: Чекбокс + Номер счета + Дата + Действия */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedInvoices.has(invoice.id)}
+                      onChange={() => toggleInvoiceSelection(invoice.id)}
+                      className="min-w-[28px] min-h-[28px] text-blue-600 rounded border-gray-300"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm truncate">
+                        {invoice.invoice_number}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
                       </div>
                     </div>
-                    <button
-                      onClick={() => openEditInvoice(invoice)}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-blue-600"
-                      title="Редактировать"
-                    >
-                      <Edit className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  {/* Строка 2: Поставщик и категория */}
-                  <div className="space-y-2 mb-3">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Поставщик</div>
-                      <div className="text-sm font-medium text-gray-900">{invoice.suppliers?.name || '—'}</div>
-                      {invoice.suppliers?.inn && (
-                        <div className="text-xs text-gray-600 font-mono mt-0.5">ИНН: {invoice.suppliers.inn}</div>
+                    <div className="flex items-center gap-1">
+                      {invoice.file_url && (
+                        <a 
+                          href={invoice.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="w-9 h-9 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded"
+                        >
+                          📎
+                        </a>
                       )}
+                      <button
+                        onClick={() => openEditInvoice(invoice)}
+                        className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
                     </div>
-                    {invoice.suppliers?.category && (
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Категория</div>
-                        <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                          {expenseCategoryMap[invoice.suppliers.category as SupplierCategory] || invoice.suppliers.category}
-                        </span>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Строка 3: Проект */}
-                  {invoice.project_id && (
-                    <div className="mb-3">
-                      <div className="text-xs text-gray-500 mb-1">Проект</div>
+                  {/* Строка 2: Поставщик */}
+                  <div className="text-sm text-gray-900 mb-1 truncate">
+                    {invoice.suppliers?.name || '—'}
+                  </div>
+
+                  {/* Строка 3: Категория + Проект */}
+                  <div className="flex items-center gap-2 mb-2 text-xs">
+                    {invoice.suppliers?.category && (
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded">
+                        {expenseCategoryMap[invoice.suppliers.category as SupplierCategory] || invoice.suppliers.category}
+                      </span>
+                    )}
+                    {invoice.project_id && (
                       <a 
                         href={`/projects/${invoice.project_id}`}
-                        className="text-sm text-blue-600 hover:underline"
+                        className="text-blue-600 hover:underline truncate"
                       >
                         {projects.find(p => p.id === invoice.project_id)?.title || 'Проект'}
                       </a>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  {/* Строка 4: Суммы и файл */}
-                  <div className="flex items-center justify-between pt-3 border-t">
-                    <div>
-                      <div className="text-lg font-bold text-gray-900">
-                        {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к ₽` : '—'}
-                      </div>
-                      {invoice.vat_amount && (
-                        <div className="text-xs text-gray-500">
-                          НДС: {(invoice.vat_amount / 1000).toFixed(1)}к ₽
-                        </div>
-                      )}
+                  {/* Строка 4: Сумма */}
+                  <div className="flex items-baseline gap-2 pt-2 border-t">
+                    <div className="text-base font-bold text-gray-900">
+                      {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к ₽` : '—'}
                     </div>
-                    {invoice.file_url && (
-                      <a 
-                        href={invoice.file_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg"
-                      >
-                        📎
-                      </a>
+                    {invoice.vat_amount && (
+                      <div className="text-xs text-gray-500">
+                        НДС: {(invoice.vat_amount / 1000).toFixed(1)}к
+                      </div>
                     )}
                   </div>
                 </div>
