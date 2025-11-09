@@ -214,7 +214,7 @@ export default function ProjectsPage() {
                 <label className="block text-xs text-gray-600 mb-1">Статус</label>
                 <select
                   value={formData.status}
-                  onChange={e => setFormData({ ...formData, status: e.target.value as Project['status'] })}
+                  onChange={e => setFormData({ ...formData, status: e.target.value as any })}
                   className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="planning">Планирование</option>
