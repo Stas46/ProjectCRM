@@ -1,6 +1,6 @@
-'use client';
+ssh root@82.97.253.12'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Upload, Home, FileText, Trash2, Link as LinkIcon, X, Edit, Save } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
 
@@ -53,10 +53,34 @@ export default function InvoicesPage() {
     supplier_id: '',
   });
 
+  // Фильтры
+  const [filterProject, setFilterProject] = useState<string>('all');
+  const [filterSupplier, setFilterSupplier] = useState<string>('all');
+  const [filterPeriod, setFilterPeriod] = useState<string>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+
   useEffect(() => {
     loadInvoices();
     loadSuppliers();
+    loadProjects();
   }, []);
+
+  const loadProjects = async () => {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, title, client')
+        .order('title');
+
+      if (error) throw error;
+      setProjects(data || []);
+    } catch (err) {
+      console.error('Ошибка загрузки проектов:', err);
+    }
+  };
 
   const loadSuppliers = async () => {
     try {
@@ -92,6 +116,8 @@ export default function InvoicesPage() {
         .order('sequence_number', { ascending: false});
 
       if (error) throw error;
+      
+      console.log('📋 Загружено счетов:', data?.length);
       setInvoices(data || []);
     } catch (err) {
       console.error('Ошибка:', err);
@@ -165,10 +191,19 @@ export default function InvoicesPage() {
   };
 
   const toggleAllInvoices = () => {
-    if (selectedInvoices.size === invoices.length) {
-      setSelectedInvoices(new Set());
+    const filteredIds = new Set(filteredInvoices.map(inv => inv.id));
+    const allFilteredSelected = filteredInvoices.every(inv => selectedInvoices.has(inv.id));
+    
+    if (allFilteredSelected) {
+      // Убираем выделение только с отфильтрованных счетов
+      const newSelection = new Set(selectedInvoices);
+      filteredIds.forEach(id => newSelection.delete(id));
+      setSelectedInvoices(newSelection);
     } else {
-      setSelectedInvoices(new Set(invoices.map(inv => inv.id)));
+      // Добавляем к выделению все отфильтрованные счета
+      const newSelection = new Set(selectedInvoices);
+      filteredIds.forEach(id => newSelection.add(id));
+      setSelectedInvoices(newSelection);
     }
   };
 
@@ -194,21 +229,8 @@ export default function InvoicesPage() {
     }
   };
 
-  const loadProjects = async () => {
-    try {
-      const { supabase } = await import('@/lib/supabase');
-      
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, title, client')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProjects(data || []);
-      setShowProjectSelect(true);
-    } catch (err) {
-      console.error('Ошибка загрузки проектов:', err);
-    }
+  const openProjectSelector = async () => {
+    setShowProjectSelect(true);
   };
 
   const linkToProject = async (projectId: string) => {
@@ -272,6 +294,64 @@ export default function InvoicesPage() {
     }
   };
 
+  // Функция фильтрации счетов
+  const filteredInvoices = useMemo(() => {
+    let filtered = [...invoices];
+
+    // Фильтр по проекту
+    if (filterProject !== 'all') {
+      if (filterProject === 'unlinked') {
+        filtered = filtered.filter(inv => !inv.project_id);
+      } else {
+        filtered = filtered.filter(inv => inv.project_id === filterProject);
+      }
+    }
+
+    // Фильтр по поставщику
+    if (filterSupplier !== 'all') {
+      filtered = filtered.filter(inv => inv.supplier_id === filterSupplier);
+    }
+
+    // Фильтр по периоду
+    if (filterPeriod !== 'all') {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      filtered = filtered.filter(inv => {
+        const invoiceDate = new Date(inv.invoice_date);
+        
+        switch (filterPeriod) {
+          case 'today':
+            return invoiceDate >= startOfToday;
+          case 'week':
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return invoiceDate >= weekAgo;
+          case 'month':
+            const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+            return invoiceDate >= monthAgo;
+          case 'quarter':
+            const quarterAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+            return invoiceDate >= quarterAgo;
+          case 'year':
+            const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+            return invoiceDate >= yearAgo;
+          case 'custom':
+            if (customStartDate && customEndDate) {
+              const start = new Date(customStartDate);
+              const end = new Date(customEndDate);
+              end.setHours(23, 59, 59, 999);
+              return invoiceDate >= start && invoiceDate <= end;
+            }
+            return true;
+          default:
+            return true;
+        }
+      });
+    }
+
+    return filtered;
+  }, [invoices, filterProject, filterSupplier, filterPeriod, customStartDate, customEndDate]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -294,7 +374,9 @@ export default function InvoicesPage() {
             </a>
             <FileText className="w-5 h-5 text-blue-600" />
             <h1 className="text-xl font-bold text-gray-900">Счета</h1>
-            <span className="text-sm text-gray-500">({invoices.length})</span>
+            <span className="text-sm text-gray-500">
+              ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
+            </span>
             {selectedInvoices.size > 0 && (
               <span className="text-sm text-blue-600 font-medium">
                 Выбрано: {selectedInvoices.size}
@@ -305,7 +387,7 @@ export default function InvoicesPage() {
             {selectedInvoices.size > 0 && (
               <>
                 <button
-                  onClick={loadProjects}
+                  onClick={openProjectSelector}
                   className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
                 >
                   <LinkIcon className="w-4 h-4" />
@@ -340,6 +422,111 @@ export default function InvoicesPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-4">
+        {/* Фильтры */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-4 border">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Проект
+              </label>
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="w-full px-2 py-1.5 border rounded text-sm"
+              >
+                <option value="all">Все проекты</option>
+                <option value="unlinked">Без проекта</option>
+                {projects.map(project => (
+                  <option key={project.id} value={project.id}>
+                    {project.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Поставщик
+              </label>
+              <select
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                className="w-full px-2 py-1.5 border rounded text-sm"
+              >
+                <option value="all">Все поставщики</option>
+                {suppliers.map(supplier => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Период
+              </label>
+              <select
+                value={filterPeriod}
+                onChange={(e) => setFilterPeriod(e.target.value)}
+                className="w-full px-2 py-1.5 border rounded text-sm"
+              >
+                <option value="all">Весь период</option>
+                <option value="today">Сегодня</option>
+                <option value="week">Неделя</option>
+                <option value="month">Месяц</option>
+                <option value="quarter">Квартал</option>
+                <option value="year">Год</option>
+                <option value="custom">Свой период</option>
+              </select>
+            </div>
+
+            {filterPeriod === 'custom' && (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    От
+                  </label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="w-full px-2 py-1.5 border rounded text-sm"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    До
+                  </label>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="w-full px-2 py-1.5 border rounded text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(filterProject !== 'all' || filterSupplier !== 'all' || filterPeriod !== 'all') && (
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setFilterProject('all');
+                    setFilterSupplier('all');
+                    setFilterPeriod('all');
+                    setCustomStartDate('');
+                    setCustomEndDate('');
+                  }}
+                  className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded border"
+                >
+                  Сбросить
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Модальное окно редактирования */}
         {editingInvoice && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -503,21 +690,25 @@ export default function InvoicesPage() {
           </div>
         )}
 
-        {invoices.length === 0 ? (
+        {filteredInvoices.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg shadow-sm">
             <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600 mb-3">Счетов пока нет</p>
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
-              <Upload className="w-4 h-4" />
-              Загрузить счет
-              <input
-                type="file"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
+            <p className="text-gray-600 mb-3">
+              {invoices.length === 0 ? 'Счетов пока нет' : 'Нет счетов, соответствующих фильтрам'}
+            </p>
+            {invoices.length === 0 && (
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
+                <Upload className="w-4 h-4" />
+                Загрузить счет
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
@@ -527,7 +718,7 @@ export default function InvoicesPage() {
                   <th className="px-3 py-2 text-left">
                     <input
                       type="checkbox"
-                      checked={selectedInvoices.size === invoices.length && invoices.length > 0}
+                      checked={selectedInvoices.size === filteredInvoices.length && filteredInvoices.length > 0}
                       onChange={toggleAllInvoices}
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                     />
@@ -535,6 +726,7 @@ export default function InvoicesPage() {
                   <th className="px-3 py-2 text-left font-medium text-gray-700">№</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-700">Номер счета</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-700">Дата</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-700">Проект</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
@@ -545,7 +737,7 @@ export default function InvoicesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {invoices.map((invoice, idx) => (
+                {filteredInvoices.map((invoice, idx) => (
                   <tr 
                     key={invoice.id} 
                     className={`transition-colors ${
@@ -564,6 +756,19 @@ export default function InvoicesPage() {
                     <td className="px-3 py-2 font-medium text-gray-900">{invoice.invoice_number}</td>
                     <td className="px-3 py-2 text-gray-600">
                       {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-xs">
+                      {invoice.project_id ? (
+                        <a 
+                          href={`/projects/${invoice.project_id}`}
+                          className="text-blue-600 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {projects.find(p => p.id === invoice.project_id)?.title || 'Проект'}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-gray-900">{invoice.suppliers?.name || '—'}</td>
                     <td className="px-3 py-2 text-gray-600 font-mono text-xs">{invoice.suppliers?.inn || '—'}</td>

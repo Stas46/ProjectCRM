@@ -104,22 +104,31 @@ async function uploadFileToStorage(file: File): Promise<string | null> {
   try {
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     
-    // Excel файлы не загружаем в Storage (не поддерживаются)
-    if (fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm') {
-      console.log('📊 Excel файл - пропускаем загрузку в Storage');
-      return null; // Вернем null, но продолжим обработку
-    }
-    
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `invoices/${fileName}`;
     
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
+    // Определяем MIME-type
+    // Для Excel файлов используем application/octet-stream, т.к. Supabase не поддерживает некоторые Excel MIME-типы
+    let contentType = file.type;
+    const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
+    
+    if (isExcel) {
+      contentType = 'application/octet-stream';
+    } else if (fileExt === 'pdf') {
+      contentType = 'application/pdf';
+    } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
+      contentType = 'image/jpeg';
+    } else if (fileExt === 'png') {
+      contentType = 'image/png';
+    }
+    
     const { data, error } = await supabase.storage
       .from('invoice-files')
       .upload(filePath, buffer, {
-        contentType: file.type,
+        contentType: contentType,
         upsert: false,
       });
     
@@ -498,7 +507,7 @@ export async function POST(request: NextRequest) {
       console.log(`🔗 Привязка к проекту: ${projectId}`);
     }
     
-    // Шаг 1: Загружаем файл в Storage (кроме Excel)
+    // Шаг 1: Загружаем файл в Storage (кроме Excel - их Storage не поддерживает)
     let fileUrl: string | null = null;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
@@ -522,7 +531,7 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
       }
     } else {
-      console.log('📊 Excel файл - обрабатываем без загрузки в Storage');
+      console.log('📊 Excel файл - обрабатываем без загрузки в Storage (Storage не поддерживает Excel)');
     }
     
     // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Excel)

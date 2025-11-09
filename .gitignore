@@ -43,3 +43,31 @@ next-env.d.ts
 # Google Cloud credentials
 google-credentials.json
 *-credentials.json
+
+# Временные файлы и тесты
+temp/
+backup/
+test-invoices/
+*.sql
+*.bat
+test-*.py
+test-*.js
+create-*.js
+update-*.js
+setup-*.js
+fix-*.js
+generate-*.js
+improve-*.js
+add-*.sql
+check-*.sql
+disable-*.sql
+migration-*.sql
+setup-*.sql
+fix-*.sql
+
+# Документация разработки
+FIX-INSTRUCTIONS.md
+PROJECTS_README.md
+STORAGE-SETUP.md
+test-results.md
+МАССОВАЯ_ЗАГРУЗКА.md
