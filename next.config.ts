@@ -5,13 +5,9 @@ import path from 'path';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: {
-    // Полностью отключаем ESLint проверку при сборке
     ignoreDuringBuilds: true,
-    // Не проверяем никакие директории
-    dirs: [],
   },
   typescript: {
-    // Игнорируем ошибки TypeScript при продакшен сборке
     ignoreBuildErrors: true,
   },
   // @ts-ignore: Добавляем конфигурацию Turbopack
