@@ -310,7 +310,14 @@ function runPdfToPngScript(pythonPath: string, scriptPath: string, pdfPath: stri
       }
       
       try {
-        const result = JSON.parse(stdout);
+        // Берем только последнюю строку из stdout (там JSON)
+        // Python может выводить предупреждения/debug информацию в начале
+        const lines = stdout.trim().split('\n');
+        const jsonLine = lines[lines.length - 1];
+        
+        console.log(`🔍 Парсим последнюю строку (${lines.length} строк всего):`, jsonLine);
+        
+        const result = JSON.parse(jsonLine);
         logger.info(`Python результат распарсен успешно`, { success: result.success });
         resolve(result);
       } catch (error) {

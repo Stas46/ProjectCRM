@@ -53,7 +53,8 @@ export async function GET() {
   try {
     const content = await fs.readFile(LOG_FILE, 'utf-8');
     const logs = JSON.parse(content);
-    return NextResponse.json({ logs });
+    // Вернуть в обратном порядке (новые сверху)
+    return NextResponse.json({ logs: logs.reverse() });
   } catch {
     return NextResponse.json({ logs: [] });
   }
