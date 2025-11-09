@@ -1,4 +1,4 @@
-ssh root@82.97.253.12'use client';
+'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { Upload, Home, FileText, Trash2, Link as LinkIcon, X, Edit, Save } from 'lucide-react';
