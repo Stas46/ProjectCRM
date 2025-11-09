@@ -48,6 +48,7 @@ google-credentials.json
 temp/
 backup/
 test-invoices/
+logs.json
 *.sql
 *.bat
 test-*.py
