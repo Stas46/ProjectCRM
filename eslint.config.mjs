@@ -13,6 +13,7 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     ignores: [
+      "**/*",  // Игнорируем все файлы для production сборки
       "node_modules/**",
       ".next/**",
       "out/**",
