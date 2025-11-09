@@ -310,14 +310,9 @@ function runPdfToPngScript(pythonPath: string, scriptPath: string, pdfPath: stri
       }
       
       try {
-        // Берем только последнюю строку из stdout (там JSON)
-        // Python может выводить предупреждения/debug информацию в начале
-        const lines = stdout.trim().split('\n');
-        const jsonLine = lines[lines.length - 1];
-        
-        console.log(`🔍 Парсим последнюю строку (${lines.length} строк всего):`, jsonLine);
-        
-        const result = JSON.parse(jsonLine);
+        // Парсим весь stdout как JSON
+        // Python может выводить многострочный JSON
+        const result = JSON.parse(stdout.trim());
         logger.info(`Python результат распарсен успешно`, { success: result.success });
         resolve(result);
       } catch (error) {
