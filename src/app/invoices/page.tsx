@@ -367,56 +367,122 @@ export default function InvoicesPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Шапка */}
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <a href="/" className="text-gray-600 hover:text-gray-900">
-              <Home className="w-5 h-5" />
-            </a>
-            <FileText className="w-5 h-5 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">Счета</h1>
-            <span className="text-sm text-gray-500">
-              ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
-            </span>
-            {selectedInvoices.size > 0 && (
-              <span className="text-sm text-blue-600 font-medium">
-                Выбрано: {selectedInvoices.size}
+        {/* Мобильный хедер */}
+        <div className="md:hidden">
+          <div className="px-4 py-3 space-y-3">
+            {/* Строка 1: Навигация + Загрузка */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <a href="/" className="text-gray-600 hover:text-gray-900">
+                  <Home className="w-5 h-5" />
+                </a>
+                <FileText className="w-5 h-5 text-blue-600" />
+                <h1 className="text-lg font-bold text-gray-900">Счета</h1>
+              </div>
+              <label className="flex items-center gap-2 px-3 min-h-[44px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
+                <Upload className="w-4 h-4" />
+                {uploading ? 'Загрузка...' : 'Загрузить'}
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            
+            {/* Строка 2: Счётчики */}
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-gray-500">
+                ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
+              {selectedInvoices.size > 0 && (
+                <span className="text-blue-600 font-medium">
+                  Выбрано: {selectedInvoices.size}
+                </span>
+              )}
+              {uploadProgress && (
+                <span className="text-gray-600">{uploadProgress}</span>
+              )}
+            </div>
+
+            {/* Строка 3: Действия с выбранными */}
             {selectedInvoices.size > 0 && (
-              <>
+              <div className="flex gap-2">
                 <button
                   onClick={openProjectSelector}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 min-h-[44px] text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
                 >
                   <LinkIcon className="w-4 h-4" />
-                  Привязать к проекту
+                  Привязать
                 </button>
                 <button
                   onClick={deleteSelectedInvoices}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded border border-red-200"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 min-h-[44px] text-sm text-red-600 hover:bg-red-50 rounded border border-red-200"
                 >
                   <Trash2 className="w-4 h-4" />
                   Удалить ({selectedInvoices.size})
                 </button>
-              </>
+              </div>
             )}
-            {uploadProgress && (
-              <span className="text-sm text-gray-600">{uploadProgress}</span>
-            )}
-            <label className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
-              <Upload className="w-4 h-4" />
-              {uploading ? 'Загрузка...' : 'Загрузить'}
-              <input
-                type="file"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
-                onChange={handleFileUpload}
-                disabled={uploading}
-                className="hidden"
-              />
-            </label>
+          </div>
+        </div>
+
+        {/* Десктопный хедер */}
+        <div className="hidden md:block">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <a href="/" className="text-gray-600 hover:text-gray-900">
+                <Home className="w-5 h-5" />
+              </a>
+              <FileText className="w-5 h-5 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">Счета</h1>
+              <span className="text-sm text-gray-500">
+                ({filteredInvoices.length}{filteredInvoices.length !== invoices.length ? ` из ${invoices.length}` : ''})
+              </span>
+              {selectedInvoices.size > 0 && (
+                <span className="text-sm text-blue-600 font-medium">
+                  Выбрано: {selectedInvoices.size}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedInvoices.size > 0 && (
+                <>
+                  <button
+                    onClick={openProjectSelector}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                    Привязать к проекту
+                  </button>
+                  <button
+                    onClick={deleteSelectedInvoices}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded border border-red-200"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Удалить ({selectedInvoices.size})
+                  </button>
+                </>
+              )}
+              {uploadProgress && (
+                <span className="text-sm text-gray-600">{uploadProgress}</span>
+              )}
+              <label className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm">
+                <Upload className="w-4 h-4" />
+                {uploading ? 'Загрузка...' : 'Загрузить'}
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -432,7 +498,7 @@ export default function InvoicesPage() {
               <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-sm"
+                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
               >
                 <option value="all">Все проекты</option>
                 <option value="unlinked">Без проекта</option>
@@ -451,7 +517,7 @@ export default function InvoicesPage() {
               <select
                 value={filterSupplier}
                 onChange={(e) => setFilterSupplier(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-sm"
+                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
               >
                 <option value="all">Все поставщики</option>
                 {suppliers.map(supplier => (
@@ -469,7 +535,7 @@ export default function InvoicesPage() {
               <select
                 value={filterPeriod}
                 onChange={(e) => setFilterPeriod(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-sm"
+                className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
               >
                 <option value="all">Весь период</option>
                 <option value="today">Сегодня</option>
@@ -482,7 +548,7 @@ export default function InvoicesPage() {
             </div>
 
             {filterPeriod === 'custom' && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 md:col-span-1">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     От
@@ -491,7 +557,7 @@ export default function InvoicesPage() {
                     type="date"
                     value={customStartDate}
                     onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="w-full px-2 py-1.5 border rounded text-sm"
+                    className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
                   />
                 </div>
                 <div className="flex-1">
@@ -502,7 +568,7 @@ export default function InvoicesPage() {
                     type="date"
                     value={customEndDate}
                     onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="w-full px-2 py-1.5 border rounded text-sm"
+                    className="w-full px-3 py-2 border rounded text-[16px] md:text-sm min-h-[44px] md:min-h-0"
                   />
                 </div>
               </div>
@@ -518,7 +584,7 @@ export default function InvoicesPage() {
                     setCustomStartDate('');
                     setCustomEndDate('');
                   }}
-                  className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded border"
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded border min-h-[44px] w-full md:w-auto"
                 >
                   Сбросить
                 </button>
@@ -711,107 +777,205 @@ export default function InvoicesPage() {
             )}
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedInvoices.size === filteredInvoices.length && filteredInvoices.length > 0}
-                      onChange={toggleAllInvoices}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                    />
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">№</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Номер счета</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Дата</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Проект</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">НДС</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Файл</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Действия</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredInvoices.map((invoice, idx) => (
-                  <tr 
-                    key={invoice.id} 
-                    className={`transition-colors ${
-                      selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <td className="px-3 py-2">
+          <>
+            {/* Десктопная таблица */}
+            <div className="hidden md:block bg-white rounded-lg shadow-sm overflow-hidden border">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">
+                      <input
+                        type="checkbox"
+                        checked={selectedInvoices.size === filteredInvoices.length && filteredInvoices.length > 0}
+                        onChange={toggleAllInvoices}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">№</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Номер счета</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Дата</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Проект</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-700">НДС</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Файл</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredInvoices.map((invoice, idx) => (
+                    <tr 
+                      key={invoice.id} 
+                      className={`transition-colors ${
+                        selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoices.has(invoice.id)}
+                          onChange={() => toggleInvoiceSelection(invoice.id)}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">{invoices.length - idx}</td>
+                      <td className="px-3 py-2 font-medium text-gray-900">{invoice.invoice_number}</td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600 text-xs">
+                        {invoice.project_id ? (
+                          <a 
+                            href={`/projects/${invoice.project_id}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {projects.find(p => p.id === invoice.project_id)?.title || 'Проект'}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-900">{invoice.suppliers?.name || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 font-mono text-xs">{invoice.suppliers?.inn || '—'}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                          {expenseCategoryMap[invoice.suppliers?.category as SupplierCategory] || invoice.suppliers?.category || '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-gray-900">
+                        {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к ₽` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gray-600">
+                        {invoice.vat_amount ? `${(invoice.vat_amount / 1000).toFixed(1)}к ₽` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {invoice.file_url ? (
+                          <a 
+                            href={invoice.file_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            📎
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={() => openEditInvoice(invoice)}
+                          className="text-gray-600 hover:text-blue-600 p-1"
+                          title="Редактировать счет"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Мобильные карточки */}
+            <div className="md:hidden space-y-3">
+              {filteredInvoices.map((invoice, idx) => (
+                <div 
+                  key={invoice.id}
+                  className={`bg-white rounded-lg shadow-sm border p-4 ${
+                    selectedInvoices.has(invoice.id) ? 'border-blue-500 bg-blue-50' : ''
+                  }`}
+                >
+                  {/* Строка 1: Чекбокс + Номер счета + Действия */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3 flex-1">
                       <input
                         type="checkbox"
                         checked={selectedInvoices.has(invoice.id)}
                         onChange={() => toggleInvoiceSelection(invoice.id)}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        className="min-w-[32px] min-h-[32px] text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                       />
-                    </td>
-                    <td className="px-3 py-2 text-gray-500">{invoices.length - idx}</td>
-                    <td className="px-3 py-2 font-medium text-gray-900">{invoice.invoice_number}</td>
-                    <td className="px-3 py-2 text-gray-600">
-                      {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600 text-xs">
-                      {invoice.project_id ? (
-                        <a 
-                          href={`/projects/${invoice.project_id}`}
-                          className="text-blue-600 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {projects.find(p => p.id === invoice.project_id)?.title || 'Проект'}
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">—</span>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 text-base mb-1">
+                          {invoice.invoice_number}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          № {invoices.length - idx} • {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => openEditInvoice(invoice)}
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-blue-600"
+                      title="Редактировать"
+                    >
+                      <Edit className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Строка 2: Поставщик и категория */}
+                  <div className="space-y-2 mb-3">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Поставщик</div>
+                      <div className="text-sm font-medium text-gray-900">{invoice.suppliers?.name || '—'}</div>
+                      {invoice.suppliers?.inn && (
+                        <div className="text-xs text-gray-600 font-mono mt-0.5">ИНН: {invoice.suppliers.inn}</div>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-gray-900">{invoice.suppliers?.name || '—'}</td>
-                    <td className="px-3 py-2 text-gray-600 font-mono text-xs">{invoice.suppliers?.inn || '—'}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
-                        {expenseCategoryMap[invoice.suppliers?.category as SupplierCategory] || invoice.suppliers?.category || '—'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium text-gray-900">
-                      {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к ₽` : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-600">
-                      {invoice.vat_amount ? `${(invoice.vat_amount / 1000).toFixed(1)}к ₽` : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {invoice.file_url ? (
-                        <a 
-                          href={invoice.file_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          📎
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <button
-                        onClick={() => openEditInvoice(invoice)}
-                        className="text-gray-600 hover:text-blue-600 p-1"
-                        title="Редактировать счет"
+                    </div>
+                    {invoice.suppliers?.category && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Категория</div>
+                        <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
+                          {expenseCategoryMap[invoice.suppliers.category as SupplierCategory] || invoice.suppliers.category}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Строка 3: Проект */}
+                  {invoice.project_id && (
+                    <div className="mb-3">
+                      <div className="text-xs text-gray-500 mb-1">Проект</div>
+                      <a 
+                        href={`/projects/${invoice.project_id}`}
+                        className="text-sm text-blue-600 hover:underline"
                       >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        {projects.find(p => p.id === invoice.project_id)?.title || 'Проект'}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Строка 4: Суммы и файл */}
+                  <div className="flex items-center justify-between pt-3 border-t">
+                    <div>
+                      <div className="text-lg font-bold text-gray-900">
+                        {invoice.total_amount ? `${(invoice.total_amount / 1000).toFixed(1)}к ₽` : '—'}
+                      </div>
+                      {invoice.vat_amount && (
+                        <div className="text-xs text-gray-500">
+                          НДС: {(invoice.vat_amount / 1000).toFixed(1)}к ₽
+                        </div>
+                      )}
+                    </div>
+                    {invoice.file_url && (
+                      <a 
+                        href={invoice.file_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg"
+                      >
+                        📎
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -140,20 +140,24 @@ export default function SuppliersPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Шапка */}
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <a href="/" className="text-gray-600 hover:text-gray-900">
-              <Home className="w-5 h-5" />
-            </a>
-            <Package className="w-5 h-5 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">Поставщики</h1>
-            <span className="text-sm text-gray-500">({suppliers.length})</span>
-          </div>
-          <div className="flex items-center gap-3">
+        {/* Мобильный хедер */}
+        <div className="md:hidden">
+          <div className="px-4 py-3 space-y-3">
+            {/* Строка 1: Навигация + Заголовок */}
+            <div className="flex items-center gap-3">
+              <a href="/" className="text-gray-600 hover:text-gray-900">
+                <Home className="w-5 h-5" />
+              </a>
+              <Package className="w-5 h-5 text-blue-600" />
+              <h1 className="text-lg font-bold text-gray-900">Поставщики</h1>
+              <span className="text-sm text-gray-500">({suppliers.length})</span>
+            </div>
+            
+            {/* Строка 2: Фильтр категорий */}
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg text-sm"
+              className="w-full px-3 py-2 border rounded-lg text-[16px] min-h-[44px]"
             >
               <option value="all">Все категории</option>
               {Object.entries(expenseCategoryMap).map(([key, label]) => (
@@ -162,86 +166,171 @@ export default function SuppliersPage() {
             </select>
           </div>
         </div>
+
+        {/* Десктопный хедер */}
+        <div className="hidden md:block">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <a href="/" className="text-gray-600 hover:text-gray-900">
+                <Home className="w-5 h-5" />
+              </a>
+              <Package className="w-5 h-5 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">Поставщики</h1>
+              <span className="text-sm text-gray-500">({suppliers.length})</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="px-3 py-1.5 border rounded-lg text-sm"
+              >
+                <option value="all">Все категории</option>
+                {Object.entries(expenseCategoryMap).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-4">
         {/* Статистика */}
-        <div className="grid grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
           <div className="bg-white rounded-lg shadow-sm p-3 border">
             <div className="text-xs text-gray-600 mb-1">Поставщиков</div>
-            <div className="text-2xl font-bold text-gray-900">{totalStats.suppliers}</div>
+            <div className="text-xl md:text-2xl font-bold text-gray-900">{totalStats.suppliers}</div>
           </div>
           <div className="bg-white rounded-lg shadow-sm p-3 border">
             <div className="text-xs text-gray-600 mb-1">Счетов</div>
-            <div className="text-2xl font-bold text-gray-900">{totalStats.invoices}</div>
+            <div className="text-xl md:text-2xl font-bold text-gray-900">{totalStats.invoices}</div>
           </div>
           <div className="bg-white rounded-lg shadow-sm p-3 border">
             <div className="text-xs text-gray-600 mb-1">Сумма</div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-xl md:text-2xl font-bold text-gray-900">
               {(totalStats.amount / 1000).toFixed(0)}к ₽
             </div>
           </div>
           <div className="bg-white rounded-lg shadow-sm p-3 border">
             <div className="text-xs text-gray-600 mb-1">НДС</div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-xl md:text-2xl font-bold text-gray-900">
               {(totalStats.vat / 1000).toFixed(0)}к ₽
             </div>
           </div>
         </div>
 
-        {/* Таблица */}
+        {/* Таблица и карточки */}
         {filteredSuppliers.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg shadow-sm">
             <p className="text-gray-600">Поставщиков не найдено</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Счетов</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-700">Действия</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-900">{supplier.name}</td>
-                    <td className="px-3 py-2 text-gray-600 font-mono text-xs">{supplier.inn || '—'}</td>
-                    <td className="px-3 py-2 text-center">
-                      <select
-                        value={supplier.category || 'general'}
-                        onChange={(e) => updateSupplierCategory(supplier.id, e.target.value as SupplierCategory)}
-                        className="px-2 py-0.5 text-xs border rounded"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {Object.entries(expenseCategoryMap).map(([key, label]) => (
-                          <option key={key} value={key}>{label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2 text-center text-gray-600">{supplier.invoiceCount}</td>
-                    <td className="px-3 py-2 text-right font-medium text-gray-900">
-                      {supplier.totalAmount ? `${(supplier.totalAmount / 1000).toFixed(1)}к ₽` : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <button
-                        onClick={() => openEditSupplier(supplier)}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                        title="Редактировать"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </td>
+          <>
+            {/* Десктопная таблица */}
+            <div className="hidden md:block bg-white rounded-lg shadow-sm overflow-hidden border">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">Поставщик</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700">ИНН</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Категория</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Счетов</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700">Действия</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredSuppliers.map((supplier) => (
+                    <tr key={supplier.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium text-gray-900">{supplier.name}</td>
+                      <td className="px-3 py-2 text-gray-600 font-mono text-xs">{supplier.inn || '—'}</td>
+                      <td className="px-3 py-2 text-center">
+                        <select
+                          value={supplier.category || 'general'}
+                          onChange={(e) => updateSupplierCategory(supplier.id, e.target.value as SupplierCategory)}
+                          className="px-2 py-0.5 text-xs border rounded"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {Object.entries(expenseCategoryMap).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2 text-center text-gray-600">{supplier.invoiceCount}</td>
+                      <td className="px-3 py-2 text-right font-medium text-gray-900">
+                        {supplier.totalAmount ? `${(supplier.totalAmount / 1000).toFixed(1)}к ₽` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={() => openEditSupplier(supplier)}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          title="Редактировать"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Мобильные карточки */}
+            <div className="md:hidden space-y-3">
+              {filteredSuppliers.map((supplier) => (
+                <div key={supplier.id} className="bg-white rounded-lg shadow-sm border p-4">
+                  {/* Строка 1: Название + Кнопка редактирования */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 text-base mb-1">
+                        {supplier.name}
+                      </h3>
+                      {supplier.inn && (
+                        <div className="text-sm text-gray-600 font-mono">
+                          ИНН: {supplier.inn}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => openEditSupplier(supplier)}
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg"
+                      title="Редактировать"
+                    >
+                      <Edit className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Строка 2: Категория */}
+                  <div className="mb-3">
+                    <label className="block text-xs text-gray-500 mb-1">Категория расхода</label>
+                    <select
+                      value={supplier.category || 'general'}
+                      onChange={(e) => updateSupplierCategory(supplier.id, e.target.value as SupplierCategory)}
+                      className="w-full px-3 py-2 border rounded-lg text-[16px] min-h-[44px]"
+                    >
+                      {Object.entries(expenseCategoryMap).map(([key, label]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Строка 3: Статистика */}
+                  <div className="flex items-center justify-between pt-3 border-t">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-0.5">Счетов</div>
+                      <div className="text-lg font-semibold text-gray-900">{supplier.invoiceCount}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-500 mb-0.5">Всего</div>
+                      <div className="text-lg font-bold text-gray-900">
+                        {supplier.totalAmount ? `${(supplier.totalAmount / 1000).toFixed(1)}к ₽` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -253,7 +342,7 @@ export default function SuppliersPage() {
               <h3 className="text-lg font-semibold">Редактировать поставщика</h3>
               <button
                 onClick={() => setEditingSupplier(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -268,7 +357,7 @@ export default function SuppliersPage() {
                   type="text"
                   value={editData.name}
                   onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  className="w-full px-3 py-2 border rounded-lg text-[16px] min-h-[44px]"
                   placeholder="Название компании"
                 />
               </div>
@@ -281,7 +370,7 @@ export default function SuppliersPage() {
                   type="text"
                   value={editData.inn}
                   onChange={(e) => setEditData({ ...editData, inn: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+                  className="w-full px-3 py-2 border rounded-lg text-[16px] font-mono min-h-[44px]"
                   placeholder="ИНН (10 или 12 цифр)"
                   maxLength={12}
                 />
@@ -296,14 +385,14 @@ export default function SuppliersPage() {
             <div className="flex gap-2 p-4 border-t bg-gray-50">
               <button
                 onClick={() => setEditingSupplier(null)}
-                className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100"
+                className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100 min-h-[44px]"
               >
                 Отмена
               </button>
               <button
                 onClick={saveSupplierEdit}
                 disabled={!editData.name.trim()}
-                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
               >
                 <Save className="w-4 h-4" />
                 Сохранить
