@@ -290,24 +290,49 @@ function runPdfToPngScript(pythonPath: string, scriptPath: string, pdfPath: stri
     });
     
     python.on('close', (code) => {
+      console.log(`🔍 Python завершен с кодом: ${code}`);
+      console.log(`📤 STDOUT (${stdout.length} символов):`, stdout.substring(0, 500));
+      console.log(`📤 STDERR (${stderr.length} символов):`, stderr.substring(0, 500));
+      
+      logger.info(`Python скрипт завершен`, { 
+        code, 
+        stdoutLength: stdout.length, 
+        stderrLength: stderr.length,
+        stdoutPreview: stdout.substring(0, 200),
+        stderrPreview: stderr.substring(0, 200)
+      });
+      
       if (code !== 0) {
         console.error(`❌ Python скрипт завершился с ошибкой (код ${code}):`, stderr);
+        logger.error(`Python скрипт завершился с ошибкой`, { code, stderr });
         resolve({ success: false, error: stderr || 'Ошибка выполнения Python скрипта' });
         return;
       }
       
       try {
         const result = JSON.parse(stdout);
+        logger.info(`Python результат распарсен успешно`, { success: result.success });
         resolve(result);
       } catch (error) {
         console.error('❌ Ошибка парсинга JSON от Python:', error);
         console.error('Вывод:', stdout);
+        logger.error(`Ошибка парсинга JSON от Python`, { 
+          error: String(error), 
+          stdout: stdout.substring(0, 1000),
+          stderr: stderr.substring(0, 1000)
+        });
         resolve({ success: false, error: 'Ошибка парсинга результата Python скрипта' });
       }
     });
     
     python.on('error', (error) => {
       console.error('❌ Ошибка запуска Python процесса:', error);
+      logger.error(`Ошибка запуска Python процесса`, { 
+        error: String(error),
+        pythonPath,
+        scriptPath,
+        pdfPath
+      });
       reject(error);
     });
   });
