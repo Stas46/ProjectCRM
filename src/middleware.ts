@@ -3,57 +3,59 @@ import type { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-
-  // ВРЕМЕННО ОТКЛЮЧЕНО для диагностики
-  console.log('🔍 Middleware:', req.nextUrl.pathname);
-  
   // Публичные роуты (доступны без авторизации)
-  const publicPaths = ['/login'];
+  const publicPaths = ['/login', '/api'];
   const isPublicPath = publicPaths.some(path => req.nextUrl.pathname.startsWith(path));
 
-  // Получаем все cookies для диагностики
+  // Пропускаем публичные пути
+  if (isPublicPath) {
+    return NextResponse.next();
+  }
+
+  // Проверяем наличие Supabase auth токенов
   const allCookies = req.cookies.getAll();
-  console.log('🍪 Cookies:', allCookies.map(c => c.name));
+  const hasAuthToken = allCookies.some(cookie => 
+    cookie.name.startsWith('sb-') && cookie.name.includes('auth-token')
+  );
 
-  // Ищем токен Supabase
-  const authCookie = allCookies.find(c => c.name.includes('auth-token'));
-  console.log('🔑 Auth cookie:', authCookie?.name);
-
-  // Временно пропускаем все запросы без проверки
-  return res;
-
-  /* ВРЕМЕННО ОТКЛЮЧЕНО - вся проверка авторизации
-  // Если нет токена и это защищенный роут - редирект на логин
-  if (!token && !isPublicPath) {
+  // Если нет токена - редирект на логин
+  if (!hasAuthToken) {
+    console.log('🔒 No auth token, redirecting to /login');
     const loginUrl = new URL('/login', req.url);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Если есть токен и пользователь на странице логина - редирект на главную
-  if (token && req.nextUrl.pathname === '/login') {
-    return NextResponse.redirect(new URL('/', req.url));
-  }
-
   // Для админ-панели проверяем роль
-  if (req.nextUrl.pathname.startsWith('/admin') && token) {
+  if (req.nextUrl.pathname.startsWith('/admin')) {
     try {
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
 
-      const { data: { user } } = await supabase.auth.getUser(token);
-      
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
+      // Получаем токен из cookies
+      const authToken = allCookies.find(c => c.name.startsWith('sb-') && c.name.includes('auth-token'));
+      if (!authToken) {
+        return NextResponse.redirect(new URL('/login', req.url));
+      }
 
-        if (profile?.role !== 'admin') {
-          return NextResponse.redirect(new URL('/', req.url));
+      const tokenData = JSON.parse(authToken.value);
+      const accessToken = tokenData?.access_token;
+
+      if (accessToken) {
+        const { data: { user } } = await supabase.auth.getUser(accessToken);
+        
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+
+          if (profile?.role !== 'admin') {
+            console.log('❌ User is not admin, redirecting to /');
+            return NextResponse.redirect(new URL('/', req.url));
+          }
         }
       }
     } catch (error) {
@@ -62,8 +64,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return res;
-  */
+  return NextResponse.next();
 }
 
 export const config = {
