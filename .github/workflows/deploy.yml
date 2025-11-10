@@ -18,6 +18,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/alu.stella-spb.ru
+            
+            echo "📄 Checking .env.local file..."
+            if [ -f .env.local ]; then
+              echo "✅ .env.local exists"
+              echo "📋 Content (masked):"
+              cat .env.local | sed 's/=.*/=***MASKED***/g'
+            else
+              echo "❌ .env.local NOT found"
+            fi
+            
             git fetch origin master
             git reset --hard origin/master
             git clean -fd
