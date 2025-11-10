@@ -41,9 +41,9 @@ export default function LoginPage() {
       if (data.user) {
         console.log('✅ Вход успешен:', data.user.email);
         
-        // Перенаправляем на главную
-        router.push('/');
-        router.refresh();
+        // Используем window.location для полной перезагрузки страницы
+        // чтобы middleware успел обработать новые cookies
+        window.location.href = '/';
       }
     } catch (err: any) {
       console.error('❌ Ошибка входа:', err);
