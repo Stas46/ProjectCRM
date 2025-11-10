@@ -18,9 +18,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/alu.stella-spb.ru
-            git reset --hard HEAD
-            git pull origin master
-            npm install
+            git fetch origin master
+            git reset --hard origin/master
+            git clean -fd
+            npm ci
             NEXT_LINT=false npm run build
             pm2 restart crm-glazing
             echo "✅ Deployment completed at $(date)"
