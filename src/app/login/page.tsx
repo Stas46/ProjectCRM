@@ -2,29 +2,58 @@
 
 import { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
-import Link from 'next/link';
-import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email || !password) return;
     
     setIsLoading(true);
+    setError('');
     
-    // В реальном приложении здесь был бы API-запрос для аутентификации
-    setTimeout(() => {
-      // После успешной аутентификации перенаправляем на главную страницу
-      window.location.href = '/';
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      
+      console.log('🔐 Попытка входа:', email);
+      console.log('📡 Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+      
+      // Выполняем вход через Supabase Auth
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      console.log('📊 Результат входа:', { data, error: signInError });
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      if (data.user) {
+        console.log('✅ Вход успешен:', data.user.email);
+        
+        // Перенаправляем на главную
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err: any) {
+      console.error('❌ Ошибка входа:', err);
+      setError(err.message === 'Invalid login credentials' 
+        ? 'Неверный email или пароль' 
+        : err.message || 'Ошибка входа'
+      );
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -91,27 +120,12 @@ export default function LoginPage() {
             </div>
           </div>
           
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
-                Запомнить меня
-              </label>
+          {/* Сообщение об ошибке */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
             </div>
-            
-            <div className="text-sm">
-              <a href="#" className="font-medium text-blue-600 hover:text-blue-500">
-                Забыли пароль?
-              </a>
-            </div>
-          </div>
+          )}
           
           <div>
             <button

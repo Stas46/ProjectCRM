@@ -56,6 +56,13 @@ function FilterRail({
   filterUrgent: boolean;
   setFilterUrgent: (val: boolean) => void;
 }) {
+  const isAllActive = !filterImportant && !filterUrgent;
+  
+  const handleAllClick = () => {
+    setFilterImportant(false);
+    setFilterUrgent(false);
+  };
+  
   return (
     <div className="flex flex-wrap gap-2 mb-4 items-center px-4 pt-4">
       <button
@@ -69,6 +76,12 @@ function FilterRail({
         onClick={() => setViewMode('matrix')}
       >
         Матрица
+      </button>
+      <button
+        className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${isAllActive ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+        onClick={handleAllClick}
+      >
+        Все
       </button>
       <button
         className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${filterImportant ? 'bg-amber-200 text-amber-900' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -212,6 +225,11 @@ function TaskItem({
               </>
             ) : (
               <>
+                {showProjectBadge && projectBadge && (
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full font-semibold">
+                    {projectBadge.emoji ?? '📁'} {projectBadge.name}
+                  </span>
+                )}
                 {task.priority === 1 && (
                   <span className="text-xs bg-amber-100 text-amber-900 px-2 py-1 rounded-full font-semibold">⭐ Важно</span>
                 )}
@@ -226,15 +244,6 @@ function TaskItem({
               </>
             )}
           </div>
-
-          {/* Project badge в списке */}
-          {!compact && showProjectBadge && projectBadge && (
-            <div className="mt-2">
-              <span className="inline-block text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
-                {projectBadge.emoji ?? '📁'} {projectBadge.name}
-              </span>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -340,7 +349,7 @@ function ContextMenu({
         <MenuItem onClick={() => onMove('u')}>⚡ Срочно</MenuItem>
         <MenuItem onClick={() => onMove('o')}>• Остальное</MenuItem>
         <div className="h-px bg-gray-200 my-1.5" />
-        <MenuItem onClick={onDelete} danger>Удалить</MenuItem>
+        <MenuItem onClick={onDelete} danger>📦 В архив</MenuItem>
       </div>
     </>
   );
@@ -718,8 +727,8 @@ function Fab({ onClick }: { onClick: () => void }) {
 function UndoSnackbar({ visible, title, onUndo }: { visible: boolean; title: string; onUndo: () => void }) {
   if (!visible) return null;
   return (
-    <div className="fixed left-3 right-3 bottom-24 bg-gray-900 text-white px-3 py-2.5 rounded-xl flex items-center justify-between shadow-2xl z-40 animate-slide-up">
-      <span className="text-sm flex-1 truncate">Удалено: {title || 'задача'}</span>
+    <div className="fixed left-3 right-3 bottom-24 bg-gray-900 text-white px-3 py-2.5 rounded-xl flex items-center justify-between shadow-2xl z-[60] animate-slide-up">
+      <span className="text-sm flex-1 truncate">В архиве: {title || 'задача'}</span>
       <button onClick={onUndo} className="ml-4 text-yellow-300 font-bold text-sm hover:text-yellow-200 transition-colors">
         Восстановить
       </button>
@@ -732,11 +741,13 @@ export default function TasksPage() {
   const [projectsList, setProjectsList] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [viewMode, setViewMode] = useState<'list' | 'matrix'>('matrix');
   const [filterImportant, setFilterImportant] = useState(false);
   const [filterUrgent, setFilterUrgent] = useState(false);
   const [filterProject, setFilterProject] = useState<string>('all');
+  const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: Task } | null>(null);
   const [addModal, setAddModal] = useState<{ open: boolean; quadrant: string; project: string } | null>(null);
@@ -745,9 +756,43 @@ export default function TasksPage() {
   const [undo, setUndo] = useState<{ visible: boolean; title: string; deletedTask: Task | null }>({ visible: false, title: '', deletedTask: null });
 
   useEffect(() => {
-    loadTasks();
-    loadProjects();
+    initAuth();
   }, []);
+
+  // Загружаем данные когда пользователь определен
+  useEffect(() => {
+    if (currentUser) {
+      console.log('✅ User loaded, fetching data for:', currentUser.email);
+      loadTasks();
+      loadProjects();
+    }
+  }, [currentUser]);
+
+  async function initAuth() {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Подписываемся на изменения auth state
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        console.log('🔄 Auth state changed:', event, session?.user?.email);
+        setCurrentUser(session?.user || null);
+      });
+      
+      // Проверяем текущую сессию
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('👤 Initial session:', session?.user?.email, session?.user?.id);
+      
+      if (session?.user) {
+        setCurrentUser(session.user);
+      }
+      
+      return () => {
+        subscription.unsubscribe();
+      };
+    } catch (err) {
+      console.error('Error initializing auth:', err);
+    }
+  }
 
   async function loadProjects() {
     try {
@@ -766,15 +811,35 @@ export default function TasksPage() {
     setError(null);
     try {
       const { supabase } = await import('@/lib/supabase');
-      const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
+      
+      // Загружаем ВСЕ задачи, фильтрация будет на фронте
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
       if (error) {
         logToFile(`❌ loadTasks - DB error: ${JSON.stringify(error)}`);
         throw error;
       }
-      logToFile(`📦 loadTasks - Loaded from DB: ${data?.length || 0} tasks`);
+      
+      // Фильтруем на фронте:
+      // - Задачи в проектах (project_id != null) - видят все
+      // - Задачи в Inbox (project_id == null) - только свои (assignee_id == currentUser.id)
+      const filteredData = data?.filter(task => {
+        if (task.project_id) {
+          // Задача в проекте - видна всем
+          return true;
+        } else {
+          // Задача в Inbox - только если я ответственный
+          return task.assignee_id === currentUser?.id;
+        }
+      }) || [];
+      
+      logToFile(`📦 loadTasks - Total: ${data?.length}, Filtered: ${filteredData.length} (user: ${currentUser?.email})`);
       
       // Сортировка: выполненные задачи в конец
-      const sorted = (data || []).sort((a, b) => {
+      const sorted = filteredData.sort((a, b) => {
         if (a.status === 'done' && b.status !== 'done') return 1;
         if (a.status !== 'done' && b.status === 'done') return -1;
         return 0;
@@ -822,52 +887,90 @@ export default function TasksPage() {
   async function deleteTask(id: string) {
     const task = tasks.find(t => t.id === id);
     if (!task) {
-      logToFile(`❌ deleteTask: task not found - ${id}`);
+      logToFile(`❌ archiveTask: task not found - ${id}`);
       return;
     }
     
-    logToFile(`🗑️ deleteTask - Deleting: ${task.title} (${id})`);
+    logToFile(`� archiveTask - Archiving: ${task.title} (${id})`);
     
     try {
       const { supabase } = await import('@/lib/supabase');
-      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      // Вместо удаления помечаем как архивную
+      const { error } = await supabase
+        .from('tasks')
+        .update({ archived: true })
+        .eq('id', id);
       
       if (error) {
-        logToFile(`❌ Delete error: ${JSON.stringify(error)}`);
+        logToFile(`❌ Archive error: ${JSON.stringify(error)}`);
         throw error;
       }
       
-      logToFile(`✅ Task deleted from DB - ${task.title}`);
-      setTasks(tasks.filter(t => t.id !== id));
+      logToFile(`✅ Task archived in DB - ${task.title}`);
+      // Обновляем задачу в локальном состоянии
+      setTasks(tasks.map(t => t.id === id ? { ...t, archived: true } : t));
       setUndo({ visible: true, title: task.title, deletedTask: task });
       setTimeout(() => setUndo({ visible: false, title: '', deletedTask: null }), 4000);
     } catch (err) {
-      logToFile(`❌ deleteTask error: ${err}`);
+      logToFile(`❌ archiveTask error: ${err}`);
     }
   }
 
   async function undoDelete() {
     if (!undo.deletedTask) {
-      logToFile(`❌ undoDelete: no task to restore`);
+      logToFile(`❌ undoRestore: no task to restore`);
       return;
     }
     
-    logToFile(`↩️ undoDelete - Restoring task: ${undo.deletedTask.title}`);
+    logToFile(`↩️ undoRestore - Restoring task from archive: ${undo.deletedTask.title}`);
     
     try {
       const { supabase } = await import('@/lib/supabase');
-      const { error } = await supabase.from('tasks').insert([undo.deletedTask]);
+      // Снимаем флаг archived
+      const { error } = await supabase
+        .from('tasks')
+        .update({ archived: false })
+        .eq('id', undo.deletedTask.id);
       
       if (error) {
         logToFile(`❌ Restore error: ${JSON.stringify(error)}`);
         throw error;
       }
       
-      logToFile(`✅ Task restored to DB - ${undo.deletedTask.title}`);
-      setTasks([...tasks, undo.deletedTask]);
+      logToFile(`✅ Task restored from archive - ${undo.deletedTask.title}`);
+      // Обновляем задачу в локальном состоянии
+      setTasks(tasks.map(t => t.id === undo.deletedTask!.id ? { ...t, archived: false } : t));
       setUndo({ visible: false, title: '', deletedTask: null });
     } catch (err) {
-      logToFile(`❌ undoDelete error: ${err}`);
+      logToFile(`❌ undoRestore error: ${err}`);
+    }
+  }
+
+  async function restoreFromArchive(id: string) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) {
+      logToFile(`❌ restoreFromArchive: task not found - ${id}`);
+      return;
+    }
+    
+    logToFile(`↩️ restoreFromArchive - Restoring: ${task.title} (${id})`);
+    
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const { error } = await supabase
+        .from('tasks')
+        .update({ archived: false })
+        .eq('id', id);
+      
+      if (error) {
+        logToFile(`❌ Restore error: ${JSON.stringify(error)}`);
+        throw error;
+      }
+      
+      logToFile(`✅ Task restored from archive - ${task.title}`);
+      setTasks(tasks.map(t => t.id === id ? { ...t, archived: false } : t));
+    } catch (err) {
+      logToFile(`❌ restoreFromArchive error: ${err}`);
     }
   }
 
@@ -971,6 +1074,7 @@ export default function TasksPage() {
     
     try {
       const { supabase } = await import('@/lib/supabase');
+      
       const projectId = data.project_id === 'inbox' ? null : data.project_id;
       
       const taskData = {
@@ -979,19 +1083,27 @@ export default function TasksPage() {
         project_id: projectId,
         priority: fields.priority,
         status: fields.status,
+        // Если задача в Inbox (без проекта) - автоматически назначаем на текущего пользователя
+        assignee_id: projectId === null ? currentUser?.id : null,
         created_at: new Date().toISOString(),
       };
       
       logToFile(`✅ Inserting task into DB: ${JSON.stringify(taskData)}`);
+      console.log('🔍 Creating task with data:', taskData);
+      console.log('👤 Current user ID:', currentUser?.id);
+      console.log('📍 Project ID (null = Inbox):', projectId);
       
       const { data: inserted, error } = await supabase.from('tasks').insert(taskData).select();
       
       if (error) {
         logToFile(`❌ createTask insert error: ${JSON.stringify(error)}`);
+        console.error('❌ Insert error:', error);
         throw error;
       }
       
       logToFile(`✅ Task created successfully: ${JSON.stringify(inserted)}`);
+      console.log('✅ Task created:', inserted);
+      console.log('🔑 Inserted assignee_id:', inserted?.[0]?.assignee_id);
       logToFile(`🔄 Calling loadTasks to refresh...`);
       loadTasks();
     } catch (err) {
@@ -1003,19 +1115,33 @@ export default function TasksPage() {
   // Фильтрация (как в оригинале)
   const filteredTasks = useMemo(() => {
     const result = tasks.filter(task => {
+      // Архив: показываем ТОЛЬКО архивные задачи
+      if (filterProject === 'archive') {
+        return task.archived === true;
+      }
+      
+      // Обычный режим: НЕ показываем архивные задачи
+      if (task.archived === true) {
+        return false;
+      }
+      
       if (filterImportant && task.priority !== 1) return false;
       if (filterUrgent && task.status !== 'in_progress') return false;
       if (filterProject !== 'all') {
         // Для Inbox показываем задачи где project_id === null
         if (filterProject === 'inbox') {
-          return task.project_id === null || task.project_id === undefined;
+          const isInbox = !task.project_id || task.project_id === null || task.project_id === undefined || task.project_id === '';
+          logToFile(`Task "${task.title}" - project_id: "${task.project_id}", isInbox: ${isInbox}`);
+          return isInbox;
         }
         // Для других проектов - точное совпадение
-        if (task.project_id !== filterProject) return false;
+        const matches = task.project_id === filterProject;
+        logToFile(`Task "${task.title}" - project_id: "${task.project_id}", filterProject: "${filterProject}", matches: ${matches}`);
+        if (!matches) return false;
       }
       return true;
     });
-    logToFile(`Filtered tasks: project=${filterProject}, total=${tasks.length}, filtered=${result.length}, nullProjectId=${tasks.filter(t => !t.project_id).length}`);
+    logToFile(`Filtered tasks: project=${filterProject}, total=${tasks.length}, filtered=${result.length}, archived=${tasks.filter(t => t.archived).length}`);
     return result;
   }, [tasks, filterImportant, filterUrgent, filterProject]);
 
@@ -1058,9 +1184,8 @@ export default function TasksPage() {
 
   const groups = useMemo(() => {
     logToFile('📊 Grouping tasks into quadrants');
-    // В режиме матрицы используем ВСЕ задачи, игнорируя фильтр проекта
-    // В режиме списка используем отфильтрованные задачи
-    const tasksForGrouping = viewMode === 'matrix' ? tasks : filteredTasks;
+    // Используем отфильтрованные задачи в обоих режимах
+    const tasksForGrouping = filteredTasks;
     const uv = tasksForGrouping.filter(t => isImportant(t) && isUrgent(t));
     const v = tasksForGrouping.filter(t => isImportant(t) && !isUrgent(t));
     const u = tasksForGrouping.filter(t => !isImportant(t) && isUrgent(t));
@@ -1072,7 +1197,7 @@ export default function TasksPage() {
     return { uv, v, u, o };
   }, [filteredTasks, tasks, viewMode]);
 
-  // Проекты для меню (включая Inbox)
+  // Проекты для меню (включая Inbox и Архив)
   const projects: Project[] = useMemo(() => {
     const uniqueIds = Array.from(new Set(tasks.map(t => t.project_id).filter(Boolean)));
     return [
@@ -1081,7 +1206,8 @@ export default function TasksPage() {
       ...uniqueIds.map(pid => {
         const found = projectsList.find(p => p.id === pid);
         return found ? found : { id: pid!, name: `Проект ${String(pid).slice(0, 8)}`, emoji: '📁' };
-      })
+      }),
+      { id: 'archive', name: 'Архив', emoji: '📦' }
     ];
   }, [tasks, projectsList]);
 
@@ -1124,25 +1250,52 @@ export default function TasksPage() {
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
+      {/* Оверлей для закрытия сайдбара на мобильных */}
+      {showProjectsSidebar && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          onClick={() => setShowProjectsSidebar(false)}
+        />
+      )}
+      
       {/* Меню проектов слева */}
-      <aside className="w-48 border-r bg-gray-50 p-3 flex flex-col gap-2 overflow-y-auto">
+      <aside className={`
+        fixed md:static top-0 left-0 h-full z-50
+        w-64 md:w-48 border-r bg-gray-50 p-3 flex flex-col gap-2 overflow-y-auto
+        transition-transform duration-300 ease-in-out
+        ${showProjectsSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         <div className="flex items-center justify-between mb-2">
           <div className="font-bold text-lg text-gray-900">Проекты</div>
-          <a 
-            href="/" 
-            className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
-            title="На главную"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          </a>
+          <div className="flex items-center gap-1">
+            <a 
+              href="/" 
+              className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+              title="На главную"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </a>
+            <button
+              onClick={() => setShowProjectsSidebar(false)}
+              className="md:hidden p-1.5 hover:bg-gray-200 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+              title="Закрыть"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         {projects.map(p => (
           <button
             key={p.id}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left w-full font-semibold text-sm transition-colors ${filterProject === p.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-gray-200 text-gray-700'}`}
-            onClick={() => setFilterProject(p.id)}
+            onClick={() => {
+              setFilterProject(p.id);
+              setShowProjectsSidebar(false);
+            }}
           >
             <span className="text-lg flex-shrink-0">{p.emoji}</span>
             <span className="truncate">{p.name}</span>
@@ -1152,21 +1305,103 @@ export default function TasksPage() {
 
       {/* Основной контент */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <FilterRail
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          filterImportant={filterImportant}
-          setFilterImportant={setFilterImportant}
-          filterUrgent={filterUrgent}
-          setFilterUrgent={setFilterUrgent}
-        />
+        {/* Кнопка открытия проектов на мобильных */}
+        <div className="md:hidden flex items-center gap-2 px-4 pt-4 pb-2">
+          <button
+            onClick={() => setShowProjectsSidebar(true)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+            title="Проекты"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold text-gray-700">
+            {projects.find(p => p.id === filterProject)?.name || 'Все проекты'}
+          </span>
+        </div>
+        
+        {/* Фильтры - скрываем в режиме архива */}
+        {filterProject !== 'archive' && (
+          <FilterRail
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            filterImportant={filterImportant}
+            setFilterImportant={setFilterImportant}
+            filterUrgent={filterUrgent}
+            setFilterUrgent={setFilterUrgent}
+          />
+        )}
 
         {loading ? (
           <div className="flex-1 flex items-center justify-center text-gray-500">Загрузка...</div>
         ) : error ? (
           <div className="flex-1 flex items-center justify-center text-red-500">{error}</div>
         ) : filteredTasks.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400">Нет задач</div>
+          <div className="flex-1 flex items-center justify-center text-gray-400">
+            {filterProject === 'archive' ? 'Архив пуст' : 'Нет задач'}
+          </div>
+        ) : filterProject === 'archive' ? (
+          /* Архив - только список */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b bg-gray-50">
+              <h2 className="text-lg font-bold text-gray-900">📦 Архив</h2>
+              <p className="text-sm text-gray-600 mt-1">Архивированные задачи ({filteredTasks.length})</p>
+            </div>
+            <div className="flex-1 overflow-y-auto py-2">
+              {filteredTasks
+                .slice()
+                .sort((a, b) => {
+                  // В архиве сортируем по дате обновления (новые сверху)
+                  return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+                })
+                .map(task => (
+                  <div key={task.id} className="px-3 py-2 border-b hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-base text-gray-900 line-through">
+                          {task.title}
+                        </div>
+                        {task.description && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            {task.description}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          {task.priority === 1 && (
+                            <span className="text-xs bg-amber-100 text-amber-900 px-2 py-1 rounded-full font-semibold">⭐ Важно</span>
+                          )}
+                          {task.status === 'in_progress' && (
+                            <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-semibold">⚡ Срочно</span>
+                          )}
+                          {task.due_date && (
+                            <span className="text-xs bg-purple-100 text-purple-900 px-2 py-1 rounded-full font-semibold">
+                              📅 {new Date(task.due_date).toLocaleDateString('ru-RU')}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-500">
+                            {new Date(task.updated_at || task.created_at).toLocaleDateString('ru-RU', { 
+                              day: 'numeric', 
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => restoreFromArchive(task.id)}
+                        className="flex-shrink-0 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors"
+                        title="Восстановить из архива"
+                      >
+                        ↩️ Восстановить
+                      </button>
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
         ) : viewMode === 'matrix' ? (
           <div className="flex-1 flex flex-wrap p-1.5 overflow-hidden">
             <QuadrantCell 
@@ -1212,7 +1447,24 @@ export default function TasksPage() {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto py-2">
-            {filteredTasks.map(task => renderTask(task))}
+            {filteredTasks
+              .slice()
+              .sort((a, b) => {
+                // Выполненные задачи всегда внизу
+                if (a.status === 'done' && b.status !== 'done') return 1;
+                if (a.status !== 'done' && b.status === 'done') return -1;
+                
+                // Для активных задач считаем score
+                const scoreA = (a.priority === 1 ? 10 : 0) + (a.status === 'in_progress' ? 5 : 0);
+                const scoreB = (b.priority === 1 ? 10 : 0) + (b.status === 'in_progress' ? 5 : 0);
+                
+                if (scoreA !== scoreB) return scoreB - scoreA; // Больший score выше
+                
+                // При равном score - новые выше
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+              })
+              .map(task => renderTask(task))
+            }
           </div>
         )}
       </div>

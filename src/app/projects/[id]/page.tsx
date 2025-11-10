@@ -21,9 +21,10 @@ interface Task {
   id: string;
   title: string;
   description: string | null;
-  status: 'todo' | 'done';
+  status: 'todo' | 'in_progress' | 'done';
   priority: number; // 1 = high, 2 = medium, 3 = low
   due_date: string | null;
+  archived?: boolean;
   created_at: string;
 }
 
@@ -119,7 +120,8 @@ export default function ProjectDetailPage() {
   const [taskData, setTaskData] = useState({
     title: '',
     description: '',
-    priority: 2, // medium по умолчанию
+    priority: 2 as 1 | 2 | 3,
+    status: 'todo' as 'todo' | 'in_progress',
     due_date: '',
   });
 
@@ -147,7 +149,7 @@ export default function ProjectDetailPage() {
 
       const [projectRes, tasksRes, invoicesRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
-        supabase.from('tasks').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+        supabase.from('tasks').select('*').eq('project_id', projectId).or('archived.is.null,archived.eq.false').order('created_at', { ascending: false }),
         supabase.from('invoices').select('id, invoice_number, invoice_date, total_amount, vat_amount, file_url, project_id, supplier_id, created_at').eq('project_id', projectId).order('created_at', { ascending: false }),
       ]);
 
@@ -210,7 +212,13 @@ export default function ProjectDetailPage() {
   const toggleTaskStatus = async (taskId: string, currentStatus: string) => {
     try {
       const { supabase } = await import('@/lib/supabase');
-      const newStatus = currentStatus === 'done' ? 'todo' : 'done';
+      // Циклическое переключение: todo → in_progress → done → todo
+      const statusCycle: Record<string, 'todo' | 'in_progress' | 'done'> = {
+        'todo': 'in_progress',
+        'in_progress': 'done',
+        'done': 'todo'
+      };
+      const newStatus = statusCycle[currentStatus] || 'todo';
 
       const { error } = await supabase
         .from('tasks')
@@ -347,8 +355,8 @@ export default function ProjectDetailPage() {
         title: taskData.title,
         description: taskData.description || null,
         priority: taskData.priority,
+        status: taskData.status,
         due_date: taskData.due_date || null,
-        status: 'todo' as const,
       };
 
       await fetch('/api/log', {
@@ -390,6 +398,7 @@ export default function ProjectDetailPage() {
         title: '',
         description: '',
         priority: 2,
+        status: 'todo',
         due_date: '',
       });
       setShowTaskForm(false);
@@ -399,6 +408,26 @@ export default function ProjectDetailPage() {
       alert(`Ошибка при создании задачи: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
     } finally {
       setIsCreatingTask(false);
+    }
+  };
+
+  const deleteTask = async (taskId: string) => {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Архивируем задачу вместо удаления
+      const { error } = await supabase
+        .from('tasks')
+        .update({ archived: true })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      // Обновляем локальное состояние - убираем задачу из списка
+      setTasks(tasks.filter(task => task.id !== taskId));
+    } catch (err) {
+      console.error('Ошибка архивации задачи:', err);
+      alert(`Ошибка при архивации задачи: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
     }
   };
 
@@ -436,26 +465,6 @@ export default function ProjectDetailPage() {
     } catch (err) {
       console.error('Ошибка привязки счета:', err);
       alert('Ошибка при привязке счета');
-    }
-  };
-
-  const deleteTask = async (taskId: string) => {
-    if (!confirm('Удалить эту задачу?')) return;
-    
-    try {
-      const { supabase } = await import('@/lib/supabase');
-
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-
-      setTasks(tasks.filter(t => t.id !== taskId));
-    } catch (err) {
-      console.error('Ошибка удаления задачи:', err);
-      alert('Ошибка при удалении задачи');
     }
   };
 
@@ -1042,28 +1051,34 @@ export default function ProjectDetailPage() {
                       placeholder="Описание задачи"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Приоритет</label>
-                      <select
-                        value={taskData.priority}
-                        onChange={e => setTaskData({ ...taskData, priority: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
-                      >
-                        <option value="3">Низкий</option>
-                        <option value="2">Средний</option>
-                        <option value="1">Высокий</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Срок</label>
-                      <input
-                        type="date"
-                        value={taskData.due_date}
-                        onChange={e => setTaskData({ ...taskData, due_date: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Тип задачи</label>
+                    <select
+                      value={`${taskData.priority}-${taskData.status}`}
+                      onChange={e => {
+                        const [priority, status] = e.target.value.split('-');
+                        setTaskData({ 
+                          ...taskData, 
+                          priority: parseInt(priority) as 1 | 2 | 3,
+                          status: status as 'todo' | 'in_progress'
+                        });
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
+                    >
+                      <option value="1-in_progress">Важная и Срочная</option>
+                      <option value="1-todo">Важная</option>
+                      <option value="2-in_progress">Срочная</option>
+                      <option value="2-todo">Обычная</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Срок</label>
+                    <input
+                      type="date"
+                      value={taskData.due_date}
+                      onChange={e => setTaskData({ ...taskData, due_date: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-[16px]"
+                    />
                   </div>
                   <div className="flex gap-2 justify-end">
                     <button
@@ -1091,16 +1106,23 @@ export default function ProjectDetailPage() {
                 <div className="p-4 text-center text-gray-500 text-sm">Задач пока нет</div>
               ) : (
                 (() => {
-                  // Сортировка: невыполненные (новые сверху) -> выполненные (старые снизу)
+                  // Сортировка: сначала активные, потом выполненные
+                  // Внутри активных: важные+срочные, важные, срочные, обычные
                   const sortedTasks = [...tasks].sort((a, b) => {
-                    // Сначала группируем по статусу
-                    if (a.status !== b.status) {
-                      return a.status === 'todo' ? -1 : 1;
-                    }
-                    // Внутри группы: невыполненные - от новых к старым, выполненные - от старых к новым
+                    // Выполненные в конец
+                    if (a.status === 'done' && b.status !== 'done') return 1;
+                    if (a.status !== 'done' && b.status === 'done') return -1;
+                    
+                    // Если оба выполнены или оба активны - сортируем по приоритету и статусу
+                    const scoreA = (a.priority === 1 ? 10 : 0) + (a.status === 'in_progress' ? 5 : 0);
+                    const scoreB = (b.priority === 1 ? 10 : 0) + (b.status === 'in_progress' ? 5 : 0);
+                    
+                    if (scoreA !== scoreB) return scoreB - scoreA; // Больший score выше
+                    
+                    // Если score одинаковый - новые сверху
                     const dateA = new Date(a.created_at).getTime();
                     const dateB = new Date(b.created_at).getTime();
-                    return a.status === 'todo' ? dateB - dateA : dateA - dateB;
+                    return dateB - dateA;
                   });
 
                   return sortedTasks.map(task => (
@@ -1113,16 +1135,26 @@ export default function ProjectDetailPage() {
                         {task.title}
                       </div>
                       {task.description && <div className="text-xs text-gray-600 mt-1">{task.description}</div>}
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`text-xs ${priorityLabels[task.priority as keyof typeof priorityLabels]?.color || 'text-gray-600'}`}>
-                          {task.priority === 1 ? '🔴' : task.priority === 2 ? '🟡' : '🟢'}
-                          {' '}{priorityLabels[task.priority as keyof typeof priorityLabels]?.label || 'Неизвестно'}
-                        </span>
-                        {task.due_date && <span className="text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('ru-RU')}</span>}
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {task.priority === 1 && (
+                          <span className="text-xs bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-semibold">⭐ Важно</span>
+                        )}
+                        {task.status === 'in_progress' && (
+                          <span className="text-xs bg-blue-100 text-blue-900 px-2 py-0.5 rounded-full font-semibold">⚡ Срочно</span>
+                        )}
+                        {task.due_date && (
+                          <span className="text-xs bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full font-semibold">
+                            📅 {new Date(task.due_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <button onClick={() => deleteTask(task.id)} className="text-gray-400 hover:text-red-600 mt-0.5 min-w-[44px] min-h-[44px] flex items-center justify-center">
-                      <X className="w-5 h-5" />
+                    <button 
+                      onClick={() => deleteTask(task.id)} 
+                      className="text-gray-400 hover:text-orange-600 mt-0.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                      title="В архив"
+                    >
+                      📦
                     </button>
                   </div>
                   ));

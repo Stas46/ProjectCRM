@@ -23,13 +23,14 @@ export const supabase = createClient(
   supabaseAnonKey,
   {
     auth: {
-      persistSession: false, // Отключаем сохранение сессии для упрощения
-      autoRefreshToken: false,
+      persistSession: true, // ВКЛЮЧАЕМ сохранение сессии в localStorage
+      autoRefreshToken: true, // Автоматически обновляем токен
+      detectSessionInUrl: true, // Определяем сессию из URL
     },
   }
 );
 
-console.log('✅ Supabase клиент создан');
+console.log('✅ Supabase клиент создан (persistSession: true)');
 
 // Функция для проверки соединения
 export async function checkConnection() {

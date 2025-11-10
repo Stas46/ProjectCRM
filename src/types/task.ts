@@ -49,6 +49,7 @@ export interface Task {
   project_id: string;
   assignee_id?: string;
   due_date?: string;
+  archived?: boolean;
   created_at: string;
   updated_at?: string;
 }
