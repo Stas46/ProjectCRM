@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs/promises';
+import path from 'path';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    
+    // Новый режим: запись в файл tasks-debug.log
+    if (body.content && typeof body.content === 'string') {
+      const logPath = path.join(process.cwd(), 'tasks-debug.log');
+      await fs.appendFile(logPath, body.content, 'utf-8');
+      return NextResponse.json({ success: true });
+    }
+    
     const { action, ...data } = body;
 
     // Логируем в терминал с эмоджи для удобства
