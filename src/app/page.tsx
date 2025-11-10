@@ -127,6 +127,17 @@ export default function Home() {
           </a>
 
           <a
+            href="/chat"
+            className="block p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-200 hover:border-green-400"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-2xl">🤖</span>
+              <h2 className="text-lg font-semibold text-gray-900">AI Чат</h2>
+            </div>
+            <p className="text-sm text-gray-600">Общение с AI ассистентом</p>
+          </a>
+
+          <a
             href="/invoices"
             className="block p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-200 hover:border-blue-400"
           >
