@@ -38,10 +38,12 @@ export default function Home() {
           console.log('❌ Пользователь НЕ админ, роль:', profile?.role);
         }
       } else {
-        console.log('❌ Пользователь не авторизован');
+        console.log('❌ Пользователь не авторизован - редирект на /login');
+        router.push('/login');
       }
     } catch (err) {
       console.error('❌ Load user error:', err);
+      router.push('/login');
     }
   };
 
