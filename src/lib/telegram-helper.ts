@@ -78,36 +78,21 @@ export async function createLinkCode(telegramId: number, telegramUsername?: stri
   const code = generateLinkCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 минут
 
-  // Создаем временную запись с кодом
-  // Если пользователь уже есть - обновляем код
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('telegram_id', telegramId)
-    .single();
+  // Удаляем старые коды этого пользователя
+  await supabase
+    .from('telegram_link_codes')
+    .delete()
+    .eq('telegram_id', telegramId);
 
-  if (existing) {
-    // Обновляем существующего пользователя
-    await supabase
-      .from('profiles')
-      .update({
-        telegram_link_code: code,
-        telegram_link_code_expires_at: expiresAt.toISOString(),
-        telegram_username: telegramUsername
-      })
-      .eq('telegram_id', telegramId);
-  } else {
-    // Создаем временную запись (будет обновлена при привязке)
-    // Пока не знаем user_id, но храним код для последующей привязки
-    await supabase
-      .from('profiles')
-      .insert({
-        telegram_id: telegramId,
-        telegram_username: telegramUsername,
-        telegram_link_code: code,
-        telegram_link_code_expires_at: expiresAt.toISOString()
-      });
-  }
+  // Создаем новый код в отдельной таблице
+  await supabase
+    .from('telegram_link_codes')
+    .insert({
+      telegram_id: telegramId,
+      telegram_username: telegramUsername,
+      link_code: code,
+      expires_at: expiresAt.toISOString()
+    });
 
   return code;
 }
@@ -121,31 +106,41 @@ export async function linkTelegramByCode(
 ): Promise<{ success: boolean; error?: string; telegram_id?: number; telegram_username?: string }> {
   const supabase = getSupabaseServiceClient();
 
-  // Найти запись с таким кодом
-  const { data: tempProfile, error: findError } = await supabase
-    .from('profiles')
-    .select('telegram_id, telegram_username, telegram_link_code_expires_at')
-    .eq('telegram_link_code', code)
+  // Найти код в таблице telegram_link_codes
+  const { data: linkData, error: findError } = await supabase
+    .from('telegram_link_codes')
+    .select('telegram_id, telegram_username, expires_at')
+    .eq('link_code', code)
     .single();
 
-  if (findError || !tempProfile) {
+  if (findError || !linkData) {
+    console.error('❌ Link code not found:', findError);
     return { success: false, error: 'Код не найден или истек' };
   }
 
   // Проверить что код не истек
-  const expiresAt = new Date(tempProfile.telegram_link_code_expires_at);
+  const expiresAt = new Date(linkData.expires_at);
   if (expiresAt < new Date()) {
     return { success: false, error: 'Код истек. Отправьте /start боту снова.' };
+  }
+
+  // Проверить что этот telegram_id еще не привязан к другому пользователю
+  const { data: existingProfile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', linkData.telegram_id)
+    .single();
+
+  if (existingProfile && existingProfile.id !== userId) {
+    return { success: false, error: 'Этот Telegram уже привязан к другому аккаунту' };
   }
 
   // Обновить профиль пользователя
   const { error: updateError } = await supabase
     .from('profiles')
     .update({
-      telegram_id: tempProfile.telegram_id,
-      telegram_username: tempProfile.telegram_username,
-      telegram_link_code: null,
-      telegram_link_code_expires_at: null
+      telegram_id: linkData.telegram_id,
+      telegram_username: linkData.telegram_username
     })
     .eq('id', userId);
 
@@ -154,17 +149,16 @@ export async function linkTelegramByCode(
     return { success: false, error: 'Ошибка привязки' };
   }
 
-  // Удалить временную запись если она была
+  // Удалить использованный код
   await supabase
-    .from('profiles')
+    .from('telegram_link_codes')
     .delete()
-    .eq('telegram_link_code', code)
-    .neq('id', userId);
+    .eq('link_code', code);
 
   return { 
     success: true, 
-    telegram_id: tempProfile.telegram_id,
-    telegram_username: tempProfile.telegram_username
+    telegram_id: linkData.telegram_id,
+    telegram_username: linkData.telegram_username
   };
 }/**
  * Форматировать текст для Telegram Markdown
