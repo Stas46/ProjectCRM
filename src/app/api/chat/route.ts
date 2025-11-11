@@ -340,7 +340,7 @@ export async function POST(req: NextRequest) {
         
         // Для PDF показываем предупреждение
         if (pdfDocs.length > 0) {
-          currentMessageContent[0].text += `\n\n⚠️ PDF файлы (${pdfDocs.map(d => d.file_name).join(', ')}) не поддерживаются моделью DeepSeek. Используйте GPT-4o для работы с PDF.`;
+          currentMessageContent[0].text += `\n\n⚠️ PDF файлы (${pdfDocs.map((d: any) => d.file_name).join(', ')}) не поддерживаются моделью DeepSeek. Используйте GPT-4o для работы с PDF.`;
         }
       } else if (!isDeepSeek && documentAttachments.length > 0) {
         // OpenAI: загружаем документы в Files API
