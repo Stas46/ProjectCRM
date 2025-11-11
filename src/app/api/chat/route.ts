@@ -324,8 +324,8 @@ export async function POST(req: NextRequest) {
       if (isDeepSeek && documentAttachments.length > 0) {
         console.log('📄 DeepSeek: Extracting text from documents...');
         
-        const pdfDocs = documentAttachments.filter(d => d.file_type === 'application/pdf');
-        const textDocs = documentAttachments.filter(d => d.file_type !== 'application/pdf');
+        const pdfDocs = documentAttachments.filter((d: any) => d.file_type === 'application/pdf');
+        const textDocs = documentAttachments.filter((d: any) => d.file_type !== 'application/pdf');
         
         // Для текстовых документов (DOCX, TXT) извлекаем текст
         for (const doc of textDocs) {
