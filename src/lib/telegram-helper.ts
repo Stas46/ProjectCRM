@@ -116,9 +116,9 @@ export async function createLinkCode(telegramId: number, telegramUsername?: stri
  * Привязать Telegram ID к существующему пользователю по коду
  */
 export async function linkTelegramByCode(
-  userId: string, 
-  code: string
-): Promise<{ success: boolean; error?: string }> {
+  code: string,
+  userId: string
+): Promise<{ success: boolean; error?: string; telegram_id?: number; telegram_username?: string }> {
   const supabase = getSupabaseServiceClient();
 
   // Найти запись с таким кодом
@@ -161,10 +161,12 @@ export async function linkTelegramByCode(
     .eq('telegram_link_code', code)
     .neq('id', userId);
 
-  return { success: true };
-}
-
-/**
+  return { 
+    success: true, 
+    telegram_id: tempProfile.telegram_id,
+    telegram_username: tempProfile.telegram_username
+  };
+}/**
  * Форматировать текст для Telegram Markdown
  */
 export function formatForTelegram(text: string): string {

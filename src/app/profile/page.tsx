@@ -2,7 +2,7 @@
 
 import AppLayout from '@/components/app-layout';
 import { useState } from 'react';
-import { User, Mail, Phone, Lock, Bell, Eye, EyeOff, Save, Clock, LogOut } from 'lucide-react';
+import { User, Mail, Phone, Lock, Bell, Eye, EyeOff, Save, Clock, LogOut, MessageCircle } from 'lucide-react';
 
 interface UserProfile {
   id: string;
@@ -41,6 +41,11 @@ export default function ProfilePage() {
   const [showPassword, setShowPassword] = useState(false);
   
   const [isSaving, setIsSaving] = useState(false);
+  
+  const [telegramCode, setTelegramCode] = useState('');
+  const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
+  const [telegramLinkError, setTelegramLinkError] = useState('');
+  const [telegramLinkSuccess, setTelegramLinkSuccess] = useState('');
   
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -82,6 +87,45 @@ export default function ProfilePage() {
       setConfirmPassword('');
       setIsSaving(false);
     }, 1000);
+  };
+  
+  const handleLinkTelegram = async () => {
+    if (!telegramCode || telegramCode.length !== 6) {
+      setTelegramLinkError('Введите 6-значный код из Telegram');
+      return;
+    }
+    
+    setIsLinkingTelegram(true);
+    setTelegramLinkError('');
+    setTelegramLinkSuccess('');
+    
+    try {
+      const response = await fetch('/api/telegram/link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: telegramCode }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка привязки');
+      }
+      
+      setTelegramLinkSuccess('✅ Telegram успешно привязан!');
+      setTelegramCode('');
+      
+      // Обновить профиль через 2 секунды
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    } catch (error) {
+      setTelegramLinkError(error instanceof Error ? error.message : 'Произошла ошибка');
+    } finally {
+      setIsLinkingTelegram(false);
+    }
   };
   
   const getInitials = (name: string) => {
@@ -337,7 +381,82 @@ export default function ProfilePage() {
             </div>
           </div>
           
-          <div className="p-6">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <MessageCircle size={20} className="mr-2 text-blue-600" />
+              Привязка Telegram
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-gray-700 mb-2">
+                  <strong>Как привязать Telegram:</strong>
+                </p>
+                <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
+                  <li>Найдите бота в Telegram (имя бота из BotFather)</li>
+                  <li>Отправьте команду <code className="bg-white px-1 py-0.5 rounded">/start</code></li>
+                  <li>Скопируйте 6-значный код из сообщения</li>
+                  <li>Введите код ниже и нажмите &quot;Привязать&quot;</li>
+                </ol>
+              </div>
+              
+              <div>
+                <label htmlFor="telegram-code" className="block text-sm font-medium text-gray-700 mb-1">
+                  Код привязки из Telegram
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    id="telegram-code"
+                    value={telegramCode}
+                    onChange={(e) => setTelegramCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="flex-1 py-2.5 px-4 text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-lg tracking-widest font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLinkTelegram}
+                    disabled={isLinkingTelegram || telegramCode.length !== 6}
+                    className={`
+                      inline-flex items-center px-6 py-2.5 text-sm font-medium rounded-lg
+                      ${(isLinkingTelegram || telegramCode.length !== 6)
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-4 focus:ring-blue-300'
+                      }
+                    `}
+                  >
+                    {isLinkingTelegram ? (
+                      <>
+                        <Clock size={16} className="animate-spin mr-2" />
+                        Проверка...
+                      </>
+                    ) : (
+                      'Привязать'
+                    )}
+                  </button>
+                </div>
+                
+                {telegramLinkError && (
+                  <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                    ❌ {telegramLinkError}
+                  </div>
+                )}
+                
+                {telegramLinkSuccess && (
+                  <div className="mt-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-3">
+                    {telegramLinkSuccess}
+                  </div>
+                )}
+                
+                <p className="mt-2 text-xs text-gray-500">
+                  ⏰ Код действителен 10 минут
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-6">`
             <h3 className="text-lg font-medium text-gray-900 mb-4">Настройки</h3>
             
             <div className="space-y-4">
