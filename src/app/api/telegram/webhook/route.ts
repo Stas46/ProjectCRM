@@ -19,6 +19,19 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Хранилище режимов пользователей (в production использовать Redis/БД)
+const userModes = new Map<number, 'ai' | 'crm' | 'hybrid'>();
+
+// Получить режим пользователя (по умолчанию hybrid)
+function getUserMode(telegramId: number): 'ai' | 'crm' | 'hybrid' {
+  return userModes.get(telegramId) || 'hybrid';
+}
+
+// Установить режим пользователя
+function setUserMode(telegramId: number, mode: 'ai' | 'crm' | 'hybrid') {
+  userModes.set(telegramId, mode);
+}
+
 interface TelegramMessage {
   message_id: number;
   from: {
@@ -47,9 +60,26 @@ interface TelegramMessage {
   date: number;
 }
 
+interface TelegramCallbackQuery {
+  id: string;
+  from: {
+    id: number;
+    first_name: string;
+    username?: string;
+  };
+  message?: {
+    message_id: number;
+    chat: {
+      id: number;
+    };
+  };
+  data?: string;
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,6 +87,12 @@ export async function POST(req: NextRequest) {
     const update: TelegramUpdate = await req.json();
     
     console.log('📱 Telegram webhook:', JSON.stringify(update, null, 2));
+
+    // Обработка callback query (нажатия на кнопки)
+    if (update.callback_query) {
+      await handleCallbackQuery(update.callback_query);
+      return NextResponse.json({ ok: true });
+    }
 
     if (!update.message) {
       return NextResponse.json({ ok: true });
@@ -112,50 +148,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Запускаем Data Agent
-    console.log(`🤖 Running Data Agent for user ${userId}`);
-    const { data: dataResponse, intent } = await runDataAgent(userId, text);
+    // Получаем текущий режим пользователя
+    const currentMode = getUserMode(telegramId);
+    console.log(`🎯 User mode: ${currentMode}`);
 
-    // Форматируем ответ в разговорном стиле через DeepSeek
-    let finalResponse = dataResponse;
-    
-    // Если это был запрос данных, делаем ответ более разговорным
-    if (intent && dataResponse) {
-      try {
-        const deepseekResponse = await fetch('https://api.deepseek.com/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'deepseek-chat',
-            messages: [
-              {
-                role: 'system',
-                content: `Ты личный ассистент в CRM системе для Telegram. 
+    let finalResponse = '';
+
+    // Режим AI - только DeepSeek без CRM
+    if (currentMode === 'ai') {
+      finalResponse = await getAIResponse(text);
+    }
+    // Режим CRM - только данные из CRM
+    else if (currentMode === 'crm') {
+      const { data: dataResponse } = await runDataAgent(userId, text);
+      finalResponse = dataResponse || 'Нет данных в CRM по вашему запросу.';
+    }
+    // Гибридный режим - сначала CRM, потом AI
+    else {
+      const { data: dataResponse, intent } = await runDataAgent(userId, text);
+      
+      // Если Data Agent нашёл данные - форматируем их
+      if (dataResponse && dataResponse !== 'Нет данных') {
+        try {
+          const deepseekResponse = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: 'deepseek-chat',
+              messages: [
+                {
+                  role: 'system',
+                  content: `Ты личный ассистент в CRM системе для Telegram. 
 Отвечай кратко, дружелюбно и по-человечески.
 Используй эмодзи умеренно.
 Если нужно показать список - используй четкую структуру.
 Не повторяй вопрос пользователя.`
-              },
-              {
-                role: 'user',
-                content: `Пользователь спросил: "${text}"\n\nДанные из CRM:\n${dataResponse}\n\nСформулируй ответ в разговорном стиле на русском языке.`
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 500,
-          }),
-        });
+                },
+                {
+                  role: 'user',
+                  content: `Пользователь спросил: "${text}"\n\nДанные из CRM:\n${dataResponse}\n\nСформулируй ответ в разговорном стиле на русском языке.`
+                }
+              ],
+              temperature: 0.7,
+              max_tokens: 500,
+            }),
+          });
 
-        const deepseekData = await deepseekResponse.json();
-        if (deepseekData.choices && deepseekData.choices[0]?.message?.content) {
-          finalResponse = deepseekData.choices[0].message.content;
+          const deepseekData = await deepseekResponse.json();
+          if (deepseekData.choices && deepseekData.choices[0]?.message?.content) {
+            finalResponse = deepseekData.choices[0].message.content;
+          } else {
+            finalResponse = dataResponse;
+          }
+        } catch (error) {
+          console.error('❌ DeepSeek formatting error:', error);
+          finalResponse = dataResponse;
         }
-      } catch (error) {
-        console.error('❌ DeepSeek formatting error:', error);
-        // Используем оригинальный ответ если DeepSeek недоступен
+      } else {
+        // Если CRM не нашёл данных - используем просто AI
+        finalResponse = await getAIResponse(text);
       }
     }
 
@@ -168,6 +222,129 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ Telegram webhook error:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Отправить меню выбора режима с inline кнопками
+ */
+async function sendModeSelectionMenu(chatId: number, currentMode: 'ai' | 'crm' | 'hybrid') {
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  
+  const modeMarkers = {
+    ai: currentMode === 'ai' ? '✅ ' : '',
+    crm: currentMode === 'crm' ? '✅ ' : '',
+    hybrid: currentMode === 'hybrid' ? '✅ ' : ''
+  };
+
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: `⚙️ *Выберите режим работы:*\n\n` +
+            `🤖 *AI режим* - Общение с искусственным интеллектом на любые темы\n\n` +
+            `📋 *CRM режим* - Работа только с задачами, проектами и счетами\n\n` +
+            `🔄 *Гибридный* - Сначала поиск в CRM, если не найдено - ответ AI`,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: `${modeMarkers.ai}🤖 AI`, callback_data: 'mode_ai' }
+          ],
+          [
+            { text: `${modeMarkers.crm}📋 CRM`, callback_data: 'mode_crm' }
+          ],
+          [
+            { text: `${modeMarkers.hybrid}🔄 Гибридный`, callback_data: 'mode_hybrid' }
+          ]
+        ]
+      }
+    })
+  });
+}
+
+/**
+ * Получить ответ от AI (DeepSeek) без CRM данных
+ */
+async function getAIResponse(text: string): Promise<string> {
+  try {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: `Ты умный AI-ассистент в Telegram. 
+Отвечай кратко, дружелюбно и полезно.
+Используй эмодзи умеренно.
+Отвечай на русском языке.`
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        temperature: 0.8,
+        max_tokens: 800,
+      }),
+    });
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || 'Не удалось получить ответ от AI';
+  } catch (error) {
+    console.error('❌ AI response error:', error);
+    return 'Произошла ошибка при обращении к AI';
+  }
+}
+
+/**
+ * Обработка нажатий на inline кнопки
+ */
+async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
+  const telegramId = callbackQuery.from.id;
+  const chatId = callbackQuery.message?.chat.id;
+  const data = callbackQuery.data;
+
+  if (!chatId || !data) return;
+
+  // Обработка переключения режима
+  if (data.startsWith('mode_')) {
+    const mode = data.replace('mode_', '') as 'ai' | 'crm' | 'hybrid';
+    setUserMode(telegramId, mode);
+
+    const modeNames = {
+      ai: '🤖 AI режим',
+      crm: '📋 CRM режим',
+      hybrid: '🔄 Гибридный режим'
+    };
+
+    const modeDescriptions = {
+      ai: 'Только общение с AI, без доступа к CRM',
+      crm: 'Только работа с задачами, проектами и счетами',
+      hybrid: 'Сначала поиск в CRM, затем AI если нет данных'
+    };
+
+    // Отправляем подтверждение
+    await sendTelegramMessage(
+      chatId,
+      `✅ Выбран *${modeNames[mode]}*\n\n${modeDescriptions[mode]}`
+    );
+
+    // Подтверждаем callback (убирает "часики" на кнопке)
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQuery.id,
+        text: `Режим изменён на: ${modeNames[mode]}`
+      })
+    });
   }
 }
 
@@ -197,10 +374,14 @@ async function handleCommand(
     }
 
     case '/help': {
+      const currentMode = getUserMode(telegramId);
+      const modeEmoji = currentMode === 'ai' ? '🤖' : currentMode === 'crm' ? '📋' : '🔄';
+      
       await sendTelegramMessage(
         chatId,
         `📋 *Доступные команды:*\n\n` +
         `/start - Получить код привязки\n` +
+        `/mode - Переключить режим работы ${modeEmoji}\n` +
         `/tasks - Показать мои задачи\n` +
         `/projects - Показать проекты\n` +
         `/invoices - Показать счета\n` +
@@ -209,8 +390,16 @@ async function handleCommand(
         `• "какие задачи на сегодня?"\n` +
         `• "создай важную задачу купить крышки"\n` +
         `• "переместить в квадрант 1"\n` +
-        `• "покажи проекты"`
+        `• "покажи проекты"\n\n` +
+        `🎤 *Также поддерживаются голосовые сообщения!*`
       );
+      break;
+    }
+
+    case '/mode': {
+      // Отправляем меню выбора режима с inline кнопками
+      const currentMode = getUserMode(telegramId);
+      await sendModeSelectionMenu(chatId, currentMode);
       break;
     }
 
