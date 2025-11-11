@@ -22,20 +22,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Получаем текущего пользователя через cookies
+    // Получаем текущего пользователя через токен из Authorization header
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: request.headers.get('Authorization') || '',
-          },
-        },
-      }
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Получаем токен из заголовка Authorization
+    const authHeader = request.headers.get('authorization');
+    const accessToken = authHeader?.replace('Bearer ', '');
+
+    if (!accessToken) {
+      console.error('❌ No access token in Authorization header');
+      return NextResponse.json(
+        { error: 'Необходима авторизация' },
+        { status: 401 }
+      );
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
 
     if (authError || !user) {
       return NextResponse.json(

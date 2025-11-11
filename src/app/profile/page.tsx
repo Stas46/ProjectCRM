@@ -100,10 +100,21 @@ export default function ProfilePage() {
     setTelegramLinkSuccess('');
     
     try {
+      // Получаем сессию для токена
+      const { supabase } = await import('@/lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        setTelegramLinkError('Необходима авторизация');
+        setIsLinkingTelegram(false);
+        return;
+      }
+      
       const response = await fetch('/api/telegram/link', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ code: telegramCode }),
       });
