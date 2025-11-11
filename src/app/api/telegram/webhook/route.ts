@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
 import { runDataAgent } from '@/lib/data-agent';
 import {
   sendTelegramMessage,
@@ -12,6 +13,11 @@ import {
   formatForTelegram
 } from '@/lib/telegram-helper';
 import { getUserTasks, getUserProjects, getUserInvoices } from '@/lib/crm-data-tools';
+
+// Инициализация OpenAI для Whisper
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 interface TelegramMessage {
   message_id: number;
@@ -26,6 +32,18 @@ interface TelegramMessage {
     type: string;
   };
   text?: string;
+  voice?: {
+    file_id: string;
+    file_unique_id: string;
+    duration: number;
+    mime_type?: string;
+  };
+  audio?: {
+    file_id: string;
+    file_unique_id: string;
+    duration: number;
+    mime_type?: string;
+  };
   date: number;
 }
 
@@ -40,15 +58,38 @@ export async function POST(req: NextRequest) {
     
     console.log('📱 Telegram webhook:', JSON.stringify(update, null, 2));
 
-    if (!update.message || !update.message.text) {
+    if (!update.message) {
       return NextResponse.json({ ok: true });
     }
 
     const message = update.message;
     const chatId = message.chat.id;
-    const text = message.text || '';
     const telegramId = message.from.id;
     const username = message.from.username;
+
+    let text = message.text || '';
+
+    // Обработка голосовых сообщений
+    if (message.voice || message.audio) {
+      const fileId = message.voice?.file_id || message.audio?.file_id;
+      if (fileId) {
+        try {
+          console.log('🎤 Processing voice message:', fileId);
+          text = await transcribeVoiceMessage(fileId);
+          console.log('📝 Transcribed text:', text);
+          
+          // Уведомляем пользователя что голос распознан
+          await sendTelegramMessage(chatId, `🎤 _Распознано:_ ${text}`);
+        } catch (error) {
+          console.error('❌ Voice transcription error:', error);
+          await sendTelegramMessage(
+            chatId,
+            '❌ Не удалось распознать голосовое сообщение. Попробуйте написать текстом.'
+          );
+          return NextResponse.json({ ok: true });
+        }
+      }
+    }
 
     if (!text) {
       return NextResponse.json({ ok: true });
@@ -73,11 +114,54 @@ export async function POST(req: NextRequest) {
 
     // Запускаем Data Agent
     console.log(`🤖 Running Data Agent for user ${userId}`);
-    const { data: response } = await runDataAgent(userId, text);
+    const { data: dataResponse, intent } = await runDataAgent(userId, text);
+
+    // Форматируем ответ в разговорном стиле через DeepSeek
+    let finalResponse = dataResponse;
+    
+    // Если это был запрос данных, делаем ответ более разговорным
+    if (intent && dataResponse) {
+      try {
+        const deepseekResponse = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            messages: [
+              {
+                role: 'system',
+                content: `Ты личный ассистент в CRM системе для Telegram. 
+Отвечай кратко, дружелюбно и по-человечески.
+Используй эмодзи умеренно.
+Если нужно показать список - используй четкую структуру.
+Не повторяй вопрос пользователя.`
+              },
+              {
+                role: 'user',
+                content: `Пользователь спросил: "${text}"\n\nДанные из CRM:\n${dataResponse}\n\nСформулируй ответ в разговорном стиле на русском языке.`
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 500,
+          }),
+        });
+
+        const deepseekData = await deepseekResponse.json();
+        if (deepseekData.choices && deepseekData.choices[0]?.message?.content) {
+          finalResponse = deepseekData.choices[0].message.content;
+        }
+      } catch (error) {
+        console.error('❌ DeepSeek formatting error:', error);
+        // Используем оригинальный ответ если DeepSeek недоступен
+      }
+    }
 
     // Отправляем ответ
-    const formattedResponse = formatForTelegram(response);
-    await sendTelegramMessage(chatId, formattedResponse || 'Нет данных');
+    const formattedResponse = formatForTelegram(finalResponse);
+    await sendTelegramMessage(chatId, formattedResponse || 'Не удалось получить ответ');
 
     return NextResponse.json({ ok: true });
 
@@ -201,6 +285,46 @@ async function handleCommand(
       await sendTelegramMessage(chatId, 'Неизвестная команда. Используйте /help');
     }
   }
+}
+
+/**
+ * Транскрибация голосового сообщения через OpenAI Whisper
+ */
+async function transcribeVoiceMessage(fileId: string): Promise<string> {
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  
+  if (!TELEGRAM_BOT_TOKEN) {
+    throw new Error('TELEGRAM_BOT_TOKEN not configured');
+  }
+
+  // 1. Получить информацию о файле
+  const fileInfoResponse = await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+  );
+  const fileInfo = await fileInfoResponse.json();
+  
+  if (!fileInfo.ok) {
+    throw new Error('Failed to get file info from Telegram');
+  }
+
+  const filePath = fileInfo.result.file_path;
+  
+  // 2. Скачать файл
+  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const audioResponse = await fetch(fileUrl);
+  const audioBlob = await audioResponse.blob();
+  
+  // 3. Конвертировать в File для OpenAI
+  const audioFile = new File([audioBlob], 'voice.ogg', { type: 'audio/ogg' });
+  
+  // 4. Отправить в Whisper API
+  const transcription = await openai.audio.transcriptions.create({
+    file: audioFile,
+    model: 'whisper-1',
+    language: 'ru', // Указываем русский язык для лучшего распознавания
+  });
+
+  return transcription.text;
 }
 
 // GET для проверки статуса
