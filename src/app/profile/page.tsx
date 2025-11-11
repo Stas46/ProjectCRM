@@ -1,7 +1,7 @@
 'use client';
 
 import AppLayout from '@/components/app-layout';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Mail, Phone, Lock, Bell, Eye, EyeOff, Save, Clock, LogOut, MessageCircle } from 'lucide-react';
 
 interface UserProfile {
@@ -12,17 +12,9 @@ interface UserProfile {
   role: 'admin' | 'manager' | 'installer' | 'accountant' | 'viewer';
   avatar?: string;
   notificationsEnabled: boolean;
+  telegram_id?: number;
+  telegram_username?: string;
 }
-
-// Временные данные
-const mockUser: UserProfile = {
-  id: '1',
-  name: 'Иванов Иван Иванович',
-  email: 'ivanov@example.com',
-  phone: '+7 (901) 123-45-67',
-  role: 'manager',
-  notificationsEnabled: true,
-};
 
 const roleLabels = {
   admin: 'Администратор',
@@ -33,7 +25,8 @@ const roleLabels = {
 };
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<UserProfile>(mockUser);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -46,20 +39,68 @@ export default function ProfilePage() {
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
   const [telegramLinkError, setTelegramLinkError] = useState('');
   const [telegramLinkSuccess, setTelegramLinkSuccess] = useState('');
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        window.location.href = '/login';
+        return;
+      }
+
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error loading profile:', error);
+        return;
+      }
+
+      setProfile({
+        id: profileData.id,
+        name: profileData.full_name || user.email || 'Пользователь',
+        email: user.email || '',
+        phone: profileData.phone || '',
+        role: profileData.role || 'viewer',
+        notificationsEnabled: true,
+        telegram_id: profileData.telegram_id,
+        telegram_username: profileData.telegram_username,
+      });
+    } catch (err) {
+      console.error('Load profile error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setProfile(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    setProfile(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [name]: value,
+      };
+    });
   };
   
   const handleToggleNotifications = () => {
-    setProfile(prev => ({
-      ...prev,
-      notificationsEnabled: !prev.notificationsEnabled,
-    }));
+    setProfile(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        notificationsEnabled: !prev.notificationsEnabled,
+      };
+    });
   };
   
   const handleSaveProfile = () => {
@@ -152,6 +193,16 @@ export default function ProfilePage() {
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Личный кабинет</h1>
         
+        {loading ? (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-12">
+            <div className="text-center text-gray-500">Загрузка профиля...</div>
+          </div>
+        ) : !profile ? (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-12">
+            <div className="text-center text-red-600">Ошибка загрузки профиля</div>
+          </div>
+        ) : (
+        <>
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-6">
           <div className="p-6 border-b border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center">
@@ -398,6 +449,30 @@ export default function ProfilePage() {
               Привязка Telegram
             </h3>
             
+            {profile.telegram_id ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm font-medium text-green-900 mb-2">
+                    ✅ Telegram привязан
+                  </p>
+                  <div className="text-sm text-green-700 space-y-1">
+                    <div>ID: <code className="bg-white px-2 py-0.5 rounded">{profile.telegram_id}</code></div>
+                    {profile.telegram_username && (
+                      <div>Username: <code className="bg-white px-2 py-0.5 rounded">@{profile.telegram_username}</code></div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-sm text-gray-600">
+                  <p className="mb-2">Теперь вы можете управлять CRM через Telegram бота:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><code className="bg-gray-100 px-1 py-0.5 rounded">/tasks</code> - список задач</li>
+                    <li><code className="bg-gray-100 px-1 py-0.5 rounded">/projects</code> - список проектов</li>
+                    <li>Или просто напишите: "какие задачи на сегодня?"</li>
+                  </ul>
+                </div>
+              </div>
+            ) : (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-gray-700 mb-2">
@@ -465,9 +540,10 @@ export default function ProfilePage() {
                 </p>
               </div>
             </div>
+            )}
           </div>
           
-          <div className="p-6">`
+          <div className="p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Настройки</h3>
             
             <div className="space-y-4">
@@ -500,6 +576,8 @@ export default function ProfilePage() {
             Выйти из системы
           </button>
         </div>
+        </>
+        )}
       </div>
     </AppLayout>
   );
