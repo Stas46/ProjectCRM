@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import mammoth from 'mammoth';
+import { runDataAgent } from '@/lib/data-agent';
 
 // Инициализация OpenAI
 const openai = new OpenAI({
@@ -203,7 +204,7 @@ async function downloadAndSaveFile(
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, model, history, attachments } = await req.json();
+    const { message, model, history, attachments, agentType = 'general' } = await req.json();
 
     if (!message || !model) {
       return NextResponse.json(
@@ -244,11 +245,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 🤖 ЛИЧНЫЙ ПОМОЩНИК: Если это personal_assistant - используем Data Agent
+    let crmData = '';
+    let dataIntent = null;
+    
+    if (agentType === 'personal_assistant') {
+      console.log('🤖 Personal Assistant mode activated');
+      const { data, intent } = await runDataAgent(user.id, message);
+      crmData = data;
+      dataIntent = intent;
+      
+      console.log('📊 CRM data retrieved:', data.length, 'chars');
+      console.log('🎯 Intent:', intent.action);
+    }
+
     // Формируем контекст из истории
+    const systemMessage = agentType === 'personal_assistant' 
+      ? `Ты - личный помощник для управления CRM-системой остекления и алюминиевых конструкций.
+
+Твои задачи:
+- Помогать с анализом задач, проектов и счетов
+- Давать рекомендации по приоритетам
+- Отвечать на вопросы о данных пользователя
+- Говорить кратко, по делу, на русском языке
+
+${crmData ? `\n--- ДАННЫЕ ИЗ CRM ---\n${crmData}\n--- КОНЕЦ ДАННЫХ ---\n` : ''}
+
+ВАЖНО: Отвечай на основе предоставленных данных. Если данных нет - скажи об этом честно.`
+      : 'Ты полезный AI-ассистент. Отвечай на русском языке, кратко и по делу. Если видишь изображения, описывай их подробно.';
+
     const messages = [
       {
         role: 'system' as const,
-        content: 'Ты полезный AI-ассистент. Отвечай на русском языке, кратко и по делу. Если видишь изображения, описывай их подробно.',
+        content: systemMessage,
       },
       ...(history || []).map((msg: any) => {
         // Если есть вложения с изображениями, добавляем их в контекст
@@ -385,6 +414,7 @@ export async function POST(req: NextRequest) {
         tokens_total: 0,
         cost_usd: 0,
         attachments: attachments || [],
+        agent_type: agentType, // Сохраняем тип агента
       });
 
     if (userMsgError) {
@@ -692,6 +722,7 @@ doc.save('output.docx')
         tokens_completion: usage.completion_tokens,
         tokens_total: usage.total_tokens,
         cost_usd: totalCost,
+        agent_type: agentType, // Сохраняем тип агента
       });
 
     if (assistantMsgError) {

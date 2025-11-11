@@ -44,6 +44,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [selectedModel, setSelectedModel] = useState('deepseek-chat');
+  const [agentType, setAgentType] = useState<'general' | 'personal_assistant'>('general');
   const [stats, setStats] = useState({ totalTokens: 0, totalCost: 0, messageCount: 0 });
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -59,7 +60,7 @@ export default function ChatPage() {
       loadMessages();
       loadStats();
     }
-  }, [currentUser]);
+  }, [currentUser, agentType]); // Перезагружаем при смене агента
 
   useEffect(() => {
     scrollToBottom();
@@ -91,6 +92,7 @@ export default function ChatPage() {
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
+        .eq('agent_type', agentType) // Фильтруем по типу агента
         .order('created_at', { ascending: true })
         .limit(100);
 
@@ -216,6 +218,7 @@ export default function ChatPage() {
           model: selectedModel,
           history: messages.slice(-10),
           attachments: fileUrls,
+          agentType: agentType, // Отправляем тип агента
         }),
       });
 
@@ -237,14 +240,16 @@ export default function ChatPage() {
   }
 
   async function clearHistory() {
-    if (!confirm('Удалить всю историю чата?')) return;
+    const agentName = agentType === 'personal_assistant' ? 'Личного помощника' : 'Обычного чата';
+    if (!confirm(`Удалить всю историю ${agentName}?`)) return;
 
     try {
       const { supabase } = await import('@/lib/supabase');
       const { error } = await supabase
         .from('chat_messages')
         .delete()
-        .eq('user_id', currentUser.id);
+        .eq('user_id', currentUser.id)
+        .eq('agent_type', agentType); // Удаляем только сообщения текущего агента
 
       if (error) throw error;
       setMessages([]);
@@ -285,6 +290,30 @@ export default function ChatPage() {
                 ))}
               </select>
 
+              {/* Переключатель типа агента */}
+              <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setAgentType('general')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    agentType === 'general'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  💬 Обычный чат
+                </button>
+                <button
+                  onClick={() => setAgentType('personal_assistant')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    agentType === 'personal_assistant'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🤖 Личный помощник
+                </button>
+              </div>
+
               <button
                 onClick={clearHistory}
                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -324,8 +353,37 @@ export default function ChatPage() {
       <div className="max-w-4xl mx-auto px-4 py-6 pb-32">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 mt-20">
-            <p className="text-lg mb-2">Начните диалог с AI</p>
-            <p className="text-sm">Выберите модель и задайте вопрос</p>
+            {agentType === 'personal_assistant' ? (
+              <>
+                <div className="text-6xl mb-4">🤖</div>
+                <p className="text-2xl font-semibold mb-3 text-gray-700">Личный помощник</p>
+                <p className="text-sm max-w-2xl mx-auto mb-6">
+                  Я помогу вам управлять задачами, проектами и счетами в CRM. Задавайте вопросы о ваших данных!
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto text-left">
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <div className="text-2xl mb-2">📋</div>
+                    <p className="font-medium text-gray-700 mb-1">Задачи</p>
+                    <p className="text-xs text-gray-500">Какие задачи на этой неделе? Что срочного?</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <div className="text-2xl mb-2">🏗️</div>
+                    <p className="font-medium text-gray-700 mb-1">Проекты</p>
+                    <p className="text-xs text-gray-500">Покажи активные проекты. Сколько завершено?</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <div className="text-2xl mb-2">📊</div>
+                    <p className="font-medium text-gray-700 mb-1">Счета</p>
+                    <p className="text-xs text-gray-500">Сколько неоплаченных счетов?</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-lg mb-2">Начните диалог с AI</p>
+                <p className="text-sm">Выберите модель и задайте вопрос</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
