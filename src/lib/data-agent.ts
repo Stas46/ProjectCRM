@@ -8,12 +8,21 @@ import {
   getUserTasks,
   getUserProjects,
   getUserInvoices,
+  createTask,
+  updateTask,
   formatTasksForAI,
   formatProjectsForAI,
   formatInvoicesForAI,
   parseDateRange,
   type DataQueryFilters
 } from './crm-data-tools';
+import { startAgentLog, consoleLog } from './agent-logger';
+
+// Утилита для проверки UUID
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
 
 const deepseek = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY!,
@@ -22,69 +31,92 @@ const deepseek = new OpenAI({
 
 // Системный промпт для Data Agent
 const DATA_AGENT_SYSTEM_PROMPT = `
-Ты - специалист по извлечению данных из CRM-системы для остекления и алюминиевых конструкций.
+Ты - ассистент CRM-системы для остекления и алюминиевых конструкций.
 
-Доступные данные:
-1. **tasks** (задачи):
-   - Статусы: pending (ожидает), in_progress (в работе), completed (завершена), cancelled (отменена)
-   - Приоритеты: low, medium, high
-   - Поля: title, description, status, priority, project_id, assigned_to, due_date
+Доступные действия:
+1. **get_tasks** - получить/показать/найти задачи
+2. **get_projects** - получить/показать проекты  
+3. **get_invoices** - получить/показать счета
+4. **create_task** - создать/добавить/напомнить задачу
+5. **update_task** - изменить/обновить/переместить задачу
 
-2. **projects** (проекты):
-   - Статусы: draft (черновик), active (активный), completed (завершен), cancelled (отменен)
-   - Приоритеты: low, medium, high
-   - Поля: title, client_name, client_phone, status, priority, deadline, total_cost
+ВАЖНО: Если пользователь просит СОЗДАТЬ/ДОБАВИТЬ/НАПОМНИТЬ - используй create_task!
+Если ИЗМЕНИТЬ/ОБНОВИТЬ/ПЕРЕМЕСТИТЬ/ПОСТАВИТЬ ПРИОРИТЕТ - используй update_task!
 
-3. **invoices** (счета):
-   - Поля: invoice_number, supplier_name, invoice_date, total_amount, paid_status, project_id
-
-Твоя задача: проанализировать вопрос пользователя и вернуть JSON с параметрами запроса.
-
-Формат ответа:
+Формат ответа JSON:
 {
-  "action": "get_tasks" | "get_projects" | "get_invoices" | "unknown",
-  "filters": {
-    "status": "pending" | "in_progress" | "completed" | ...,
-    "priority": "low" | "medium" | "high",
-    "date_range": "today" | "this_week" | "this_month",
-    "paid_status": true | false,
-    "limit": number
-  },
-  "reasoning": "краткое объяснение что понял из запроса"
+  "action": "get_tasks" | "create_task" | "update_task" | "get_projects" | "get_invoices" | "unknown",
+  "filters": {...},  // только для get_*
+  "data": {...},     // для create_* и update_*
+  "reasoning": "что понял"
 }
 
-Примеры:
+РАСПОЗНАВАНИЕ ПРИОРИТЕТА (важность + срочность):
+- "важно и срочно" / "важно срочно" / "важная срочная" / "1" → priority: 1, status: "in_progress" (квадрант UV)
+- "важно" / "важная" / "2" → priority: 1, status: "todo" (квадрант V)
+- "срочно" / "срочная" / "3" → priority: 2, status: "in_progress" (квадрант U)
+- "обычная" / "не срочно" / "4" → priority: 2, status: "todo" (квадрант O)
 
-Вопрос: "Какие у меня задачи на этой неделе?"
-Ответ: {"action": "get_tasks", "filters": {"date_range": "this_week", "limit": 50}, "reasoning": "Пользователь хочет увидеть задачи текущей недели"}
+ОПЕЧАТКИ: распознавай варианты "важна", "срочна", "важнно", "срочьно", "вжано" и т.д.
 
-Вопрос: "Покажи активные проекты"
-Ответ: {"action": "get_projects", "filters": {"status": "active"}, "reasoning": "Нужны проекты со статусом active"}
+Примеры СОЗДАНИЯ (create_task):
+"создай важную задачу купить крышки" → {"action": "create_task", "data": {"title": "Купить крышки", "priority": 1, "status": "todo"}, "reasoning": "Важная задача"}
 
-Вопрос: "Сколько неоплаченных счетов?"
-Ответ: {"action": "get_invoices", "filters": {"paid_status": false}, "reasoning": "Запрос на счета, которые еще не оплачены"}
+"добавь срочную задачу согласовать смету" → {"action": "create_task", "data": {"title": "Согласовать смету", "priority": 2, "status": "in_progress"}, "reasoning": "Срочная задача"}
 
-Вопрос: "Срочные задачи"
-Ответ: {"action": "get_tasks", "filters": {"priority": "high", "status": "pending"}, "reasoning": "Задачи с высоким приоритетом, которые еще не начаты"}
+"важно и срочно позвонить клиенту" → {"action": "create_task", "data": {"title": "Позвонить клиенту", "priority": 1, "status": "in_progress"}, "reasoning": "Важная и срочная"}
 
-Если не понял запрос - верни:
-{"action": "unknown", "filters": {}, "reasoning": "не могу определить что нужно"}
+"купить крышки для школы" → {"action": "create_task", "data": {"title": "Купить крышки", "project_id": "школа"}, "reasoning": "Задача для проекта школа"}
 
-ВАЖНО: отвечай ТОЛЬКО валидным JSON, без дополнительного текста.
+Примеры ОБНОВЛЕНИЯ (update_task):
+"поставь высокий приоритет последней задаче" → {"action": "update_task", "data": {"target": "last", "priority": 1, "status": "todo"}, "reasoning": "Сделать важной"}
+
+"переместить в квадрант 1" → {"action": "update_task", "data": {"target": "last", "priority": 1, "status": "in_progress"}, "reasoning": "В важно+срочно"}
+
+"сделай срочной задачу купить крышки" → {"action": "update_task", "data": {"title_contains": "крышки", "priority": 2, "status": "in_progress"}, "reasoning": "Сделать срочной"}
+
+"переместить в 4" → {"action": "update_task", "data": {"target": "last", "priority": 2, "status": "todo"}, "reasoning": "В обычные"}
+
+Примеры ЧТЕНИЯ (get_*):
+"какие задачи?" → {"action": "get_tasks", "filters": {}, "reasoning": "Показать задачи"}
+
+"покажи срочные задачи" → {"action": "get_tasks", "filters": {"status": "in_progress"}, "reasoning": "Срочные"}
+
+"список проектов" → {"action": "get_projects", "filters": {}, "reasoning": "Показать проекты"}
+
+ВАЖНО: отвечай ТОЛЬКО валидным JSON.
 `.trim();
 
 export interface DataAgentRequest {
-  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'unknown';
-  filters: DataQueryFilters & { date_range?: string; paid_status?: boolean };
+  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'create_task' | 'update_task' | 'unknown';
+  filters?: DataQueryFilters & { date_range?: string; paid_status?: boolean };
+  data?: {
+    title?: string;
+    description?: string;
+    priority?: number | 'low' | 'medium' | 'high';
+    status?: 'todo' | 'in_progress' | 'done';
+    due_date?: string;
+    project_id?: string;
+    // Для update_task
+    target?: 'last' | 'first' | string; // 'last', 'first', или ID задачи
+    title_contains?: string; // поиск задачи по названию
+    task_id?: string; // прямой ID задачи
+  };
   reasoning: string;
 }
 
 /**
  * Анализирует запрос пользователя через DeepSeek
  */
-async function analyzeUserIntent(userMessage: string): Promise<DataAgentRequest> {
+async function analyzeUserIntent(
+  userMessage: string,
+  userId: string,
+  sessionId: string
+): Promise<DataAgentRequest> {
+  const log = startAgentLog(userId, 'data_agent', 'analyze_intent', { userMessage }, sessionId);
+  
   try {
-    console.log('🤖 Data Agent: Analyzing user intent...');
+    consoleLog('info', 'Data Agent: Analyzing user intent...', { userMessage });
     
     const response = await deepseek.chat.completions.create({
       model: 'deepseek-chat',
@@ -98,17 +130,42 @@ async function analyzeUserIntent(userMessage: string): Promise<DataAgentRequest>
 
     const content = response.choices[0]?.message?.content?.trim();
     if (!content) {
-      return { action: 'unknown', filters: {}, reasoning: 'Empty response from AI' };
+      const result = { action: 'unknown', filters: {}, reasoning: 'Empty response from AI' };
+      await log.finish({ 
+        outputData: result, 
+        status: 'warning',
+        modelUsed: 'deepseek-chat',
+        tokensUsed: response.usage?.total_tokens || 0
+      });
+      return result as DataAgentRequest;
     }
 
     // Парсим JSON ответ
     const parsed: DataAgentRequest = JSON.parse(content);
-    console.log('✅ Data Agent intent:', parsed.action, '|', parsed.reasoning);
+    consoleLog('success', 'Data Agent intent recognized', { 
+      action: parsed.action, 
+      reasoning: parsed.reasoning 
+    });
+    
+    await log.finish({
+      outputData: parsed,
+      status: 'success',
+      modelUsed: 'deepseek-chat',
+      tokensUsed: response.usage?.total_tokens || 0
+    });
     
     return parsed;
   } catch (error: any) {
-    console.error('❌ Data Agent error:', error.message);
-    return { action: 'unknown', filters: {}, reasoning: error.message };
+    consoleLog('error', 'Data Agent error', { error: error.message });
+    
+    const result = { action: 'unknown', filters: {}, reasoning: error.message };
+    await log.finish({
+      outputData: result,
+      status: 'error',
+      errorMessage: error.message
+    });
+    
+    return result as DataAgentRequest;
   }
 }
 
@@ -117,13 +174,22 @@ async function analyzeUserIntent(userMessage: string): Promise<DataAgentRequest>
  */
 async function fetchDataBasedOnIntent(
   userId: string,
-  intent: DataAgentRequest
+  intent: DataAgentRequest,
+  sessionId: string
 ): Promise<string> {
+  const log = startAgentLog(userId, 'data_agent', 'fetch_data', { intent }, sessionId);
+  
   try {
+    // Инициализируем filters если их нет
+    if (!intent.filters) {
+      intent.filters = {};
+    }
+
     // Применяем временной диапазон если указан
     if (intent.filters.date_range) {
       const dateRange = parseDateRange(intent.filters.date_range);
       intent.filters = { ...intent.filters, ...dateRange };
+      consoleLog('data', 'Applied date range', { dateRange });
     }
 
     // Ограничиваем количество результатов
@@ -131,62 +197,253 @@ async function fetchDataBasedOnIntent(
       intent.filters.limit = 50;
     }
 
+    consoleLog('info', `Executing ${intent.action}`, { filters: intent.filters, data: intent.data });
+    
+    let result: string;
+    let rowsAffected = 0;
+    
+    // Если project_id содержит не UUID, а название - найти проект по имени
+    if (intent.filters?.project_id && !isUUID(intent.filters.project_id)) {
+      consoleLog('info', 'Searching project by name', { name: intent.filters.project_id });
+      const { data: projects } = await getUserProjects(userId, {});
+      const foundProject = projects?.find(p => 
+        p.title?.toLowerCase().includes((intent.filters?.project_id || '').toLowerCase())
+      );
+      if (foundProject) {
+        intent.filters.project_id = foundProject.id;
+        consoleLog('success', 'Found project by name', { id: foundProject.id, title: foundProject.title });
+      } else {
+        result = `Проект "${intent.filters.project_id}" не найден.`;
+        await log.finish({ outputData: { error: 'Project not found' }, status: 'warning' });
+        return result;
+      }
+    }
+    
     switch (intent.action) {
       case 'get_tasks': {
         const { data, error } = await getUserTasks(userId, intent.filters);
-        if (error) return `Ошибка получения задач: ${error}`;
-        if (!data || data.length === 0) return 'У вас нет задач по этим критериям.';
-        return formatTasksForAI(data);
+        if (error) {
+          result = `Ошибка получения задач: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+          return result;
+        }
+        if (!data || data.length === 0) {
+          result = 'У вас нет задач по этим критериям.';
+          consoleLog('warning', 'No tasks found', { filters: intent.filters });
+        } else {
+          rowsAffected = data.length;
+          result = formatTasksForAI(data);
+          consoleLog('success', `Found ${data.length} tasks`);
+        }
+        break;
       }
 
       case 'get_projects': {
         const { data, error } = await getUserProjects(userId, intent.filters);
-        if (error) return `Ошибка получения проектов: ${error}`;
-        if (!data || data.length === 0) return 'У вас нет проектов по этим критериям.';
-        return formatProjectsForAI(data);
+        if (error) {
+          result = `Ошибка получения проектов: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+          return result;
+        }
+        if (!data || data.length === 0) {
+          result = 'У вас нет проектов по этим критериям.';
+          consoleLog('warning', 'No projects found', { filters: intent.filters });
+        } else {
+          rowsAffected = data.length;
+          result = formatProjectsForAI(data);
+          consoleLog('success', `Found ${data.length} projects`);
+        }
+        break;
       }
 
       case 'get_invoices': {
         const { data, error } = await getUserInvoices(userId, intent.filters);
-        if (error) return `Ошибка получения счетов: ${error}`;
-        if (!data || data.length === 0) return 'У вас нет счетов по этим критериям.';
-        return formatInvoicesForAI(data);
+        if (error) {
+          result = `Ошибка получения счетов: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+          return result;
+        }
+        if (!data || data.length === 0) {
+          result = 'У вас нет счетов по этим критериям.';
+          consoleLog('warning', 'No invoices found', { filters: intent.filters });
+        } else {
+          rowsAffected = data.length;
+          result = formatInvoicesForAI(data);
+          consoleLog('success', `Found ${data.length} invoices`);
+        }
+        break;
+      }
+
+      case 'create_task': {
+        if (!intent.data?.title) {
+          result = 'Ошибка: не указано название задачи.';
+          await log.finish({ outputData: { error: 'No title' }, status: 'error', errorMessage: 'Title required' });
+          return result;
+        }
+
+        // Поиск проекта по имени если указан project_id но это не UUID
+        let projectId = intent.data.project_id;
+        if (projectId && !isUUID(projectId)) {
+          consoleLog('info', `Searching project by name: ${projectId}`);
+          const { data: projects } = await getUserProjects(userId, { limit: 50 });
+          const foundProject = projects?.find((p: any) => 
+            p.client_name?.toLowerCase().includes(projectId!.toLowerCase()) ||
+            p.project_name?.toLowerCase().includes(projectId!.toLowerCase())
+          );
+          
+          if (foundProject) {
+            projectId = foundProject.id;
+            consoleLog('success', `Project found: ${foundProject.client_name}`, { projectId });
+          } else {
+            consoleLog('warning', `Project "${projectId}" not found, creating task without project`);
+            projectId = undefined;
+          }
+        }
+
+        // Парсим дату если указана в свободной форме
+        let dueDate = intent.data.due_date;
+        if (dueDate && !dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const parsedDate = parseDateRange(dueDate);
+          if (parsedDate.date_from) {
+            dueDate = parsedDate.date_from;
+          }
+        }
+
+        const { data, error } = await createTask(userId, {
+          title: intent.data.title,
+          description: intent.data.description,
+          priority: intent.data.priority as any,
+          status: intent.data.status,
+          project_id: projectId,
+          due_date: dueDate,
+        });
+
+        if (error) {
+          result = `Ошибка создания задачи: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+          return result;
+        }
+
+        rowsAffected = 1;
+        const quadrantMap: any = {1: 'UV (важно+срочно)', 2: 'V (важно)', 3: 'U (срочно)', 4: 'O (обычная)'};
+        const quadrant = data?.priority === 1 && data?.status === 'in_progress' ? 1 
+          : data?.priority === 1 && data?.status === 'todo' ? 2
+          : data?.priority === 2 && data?.status === 'in_progress' ? 3 
+          : 4;
+        result = `✅ Задача создана:\n\nНазвание: ${data?.title}\nКвадрант: ${quadrantMap[quadrant]}${data?.project_id ? `\nПроект: привязан` : ''}${data?.due_date ? `\nСрок: ${new Date(data.due_date).toLocaleDateString('ru-RU')}` : ''}`;
+        consoleLog('success', 'Task created', { taskId: data?.id, projectId: data?.project_id });
+        break;
+      }
+
+      case 'update_task': {
+        // Найти задачу для обновления
+        let taskToUpdate: any = null;
+        
+        if (intent.data?.task_id) {
+          // Прямой ID
+          const { data: allTasks } = await getUserTasks(userId, { limit: 1000 });
+          taskToUpdate = allTasks?.find((t: any) => t.id === intent.data!.task_id);
+        } else if (intent.data?.title_contains) {
+          // Поиск по названию
+          const { data: allTasks } = await getUserTasks(userId, { limit: 1000 });
+          taskToUpdate = allTasks?.find((t: any) => 
+            t.title.toLowerCase().includes(intent.data!.title_contains!.toLowerCase())
+          );
+        } else if (intent.data?.target === 'last') {
+          // Последняя задача
+          const { data: allTasks } = await getUserTasks(userId, { limit: 1 });
+          taskToUpdate = allTasks?.[0];
+        } else if (intent.data?.target === 'first') {
+          // Первая задача (самая старая)
+          const { data: allTasks } = await getUserTasks(userId, { limit: 1000 });
+          taskToUpdate = allTasks?.[allTasks.length - 1];
+        }
+
+        if (!taskToUpdate) {
+          result = 'Задача не найдена. Уточните какую задачу нужно изменить.';
+          await log.finish({ outputData: { error: 'Task not found' }, status: 'warning' });
+          return result;
+        }
+
+        // Обновляем задачу
+        const updates: any = {};
+        if (intent.data?.priority !== undefined) updates.priority = intent.data.priority;
+        if (intent.data?.status !== undefined) updates.status = intent.data.status;
+        if (intent.data?.title !== undefined) updates.title = intent.data.title;
+        if (intent.data?.description !== undefined) updates.description = intent.data.description;
+        if (intent.data?.due_date !== undefined) updates.due_date = intent.data.due_date;
+        if (intent.data?.project_id !== undefined) updates.project_id = intent.data.project_id;
+
+        const { data: updatedTask, error } = await updateTask(userId, taskToUpdate.id, updates);
+
+        if (error) {
+          result = `Ошибка обновления задачи: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+          return result;
+        }
+
+        rowsAffected = 1;
+        const quadrantMap: any = {1: 'UV (важно+срочно)', 2: 'V (важно)', 3: 'U (срочно)', 4: 'O (обычная)'};
+        const quadrant = updatedTask?.priority === 1 && updatedTask?.status === 'in_progress' ? 1 
+          : updatedTask?.priority === 1 && updatedTask?.status === 'todo' ? 2
+          : updatedTask?.priority === 2 && updatedTask?.status === 'in_progress' ? 3 
+          : 4;
+        result = `✅ Задача обновлена:\n\nНазвание: ${updatedTask?.title}\nКвадрант: ${quadrantMap[quadrant]}`;
+        consoleLog('success', 'Task updated', { taskId: updatedTask?.id });
+        break;
       }
 
       default:
-        return 'Извините, я не понял что вы хотите узнать. Попробуйте переформулировать вопрос.';
+        result = 'Извините, я не понял что вы хотите. Попробуйте переформулировать вопрос.';
+        await log.finish({ outputData: { message: result }, status: 'warning' });
+        return result;
     }
+    
+    await log.finish({ 
+      outputData: { rowsFound: rowsAffected, resultLength: result.length }, 
+      rowsAffected,
+      status: 'success' 
+    });
+    
+    return result;
   } catch (error: any) {
-    console.error('❌ Error fetching data:', error);
+    consoleLog('error', 'Error fetching data', { error: error.message });
+    await log.finish({ status: 'error', errorMessage: error.message });
     return `Ошибка: ${error.message}`;
   }
-}
-
-/**
+}/**
  * Главная функция Data Agent - анализирует запрос и возвращает данные
  */
 export async function runDataAgent(
   userId: string,
   userMessage: string
-): Promise<{ data: string; intent: DataAgentRequest }> {
+): Promise<{ data: string; intent: DataAgentRequest; sessionId: string }> {
   const startTime = Date.now();
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  consoleLog('info', '=== Data Agent Session Started ===', { sessionId, userMessage });
   
   // Шаг 1: Анализируем намерение
-  const intent = await analyzeUserIntent(userMessage);
+  const intent = await analyzeUserIntent(userMessage, userId, sessionId);
   
   // Шаг 2: Если намерение не связано с данными - возвращаем пустой результат
   if (intent.action === 'unknown') {
+    consoleLog('warning', 'Unknown intent - no data to fetch', { intent });
     return {
       data: '',
-      intent
+      intent,
+      sessionId
     };
   }
 
   // Шаг 3: Извлекаем данные
-  const data = await fetchDataBasedOnIntent(userId, intent);
+  const data = await fetchDataBasedOnIntent(userId, intent, sessionId);
   
   const elapsed = Date.now() - startTime;
-  console.log(`⏱️ Data Agent completed in ${elapsed}ms`);
+  consoleLog('success', `Data Agent completed in ${elapsed}ms`, { 
+    action: intent.action,
+    dataLength: data.length 
+  });
   
-  return { data, intent };
+  return { data, intent, sessionId };
 }

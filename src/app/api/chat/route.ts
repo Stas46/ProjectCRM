@@ -248,15 +248,18 @@ export async function POST(req: NextRequest) {
     // 🤖 ЛИЧНЫЙ ПОМОЩНИК: Если это personal_assistant - используем Data Agent
     let crmData = '';
     let dataIntent = null;
+    let agentSessionId = null;
     
     if (agentType === 'personal_assistant') {
       console.log('🤖 Personal Assistant mode activated');
-      const { data, intent } = await runDataAgent(user.id, message);
+      const { data, intent, sessionId } = await runDataAgent(user.id, message);
       crmData = data;
       dataIntent = intent;
+      agentSessionId = sessionId;
       
       console.log('📊 CRM data retrieved:', data.length, 'chars');
       console.log('🎯 Intent:', intent.action);
+      console.log('🔑 Session ID:', sessionId);
     }
 
     // Формируем контекст из истории
