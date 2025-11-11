@@ -6,6 +6,19 @@ import mammoth from 'mammoth';
 // Инициализация OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL, // Поддержка Cloudflare Worker прокси
+});
+
+// Прямой клиент OpenAI для Files API (без прокси, так как Worker не поддерживает /files)
+const openaiDirect = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  // baseURL не указываем - используем прямой доступ к api.openai.com
+});
+
+// Инициализация DeepSeek
+const deepseek = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY || 'sk-cb9f1f98752c48ef94549093660664c5',
+  baseURL: 'https://api.deepseek.com',
 });
 
 // Цены моделей ($ per 1M tokens)
@@ -14,7 +27,46 @@ const MODEL_PRICES: Record<string, { prompt: number; completion: number }> = {
   'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
   'gpt-4-turbo': { prompt: 10, completion: 30 },
   'gpt-3.5-turbo': { prompt: 0.5, completion: 1.5 },
+  'deepseek-chat': { prompt: 0.28, completion: 0.42 }, // DeepSeek-V3.2-Exp (cache miss)
+  'deepseek-coder': { prompt: 0.28, completion: 0.42 },
 };
+
+// Функция для извлечения текста из документов
+async function extractTextFromDocument(fileUrl: string, fileName: string, fileType: string): Promise<string> {
+  try {
+    console.log('📄 Extracting text from:', fileName);
+    
+    const fileResponse = await fetch(fileUrl);
+    const fileBuffer = await fileResponse.arrayBuffer();
+    const buffer = Buffer.from(fileBuffer);
+    
+    let text = '';
+    
+    if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      // Для DOCX используем mammoth
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+    } else if (fileType === 'text/plain') {
+      // Для TXT просто декодируем
+      text = new TextDecoder().decode(fileBuffer);
+    } else {
+      return `[Формат ${fileType} не поддерживается для извлечения текста]`;
+    }
+    
+    // Ограничиваем длину текста (первые 15000 символов)
+    const MAX_LENGTH = 15000;
+    if (text.length > MAX_LENGTH) {
+      console.log(`📏 Text truncated from ${text.length} to ${MAX_LENGTH} chars`);
+      text = text.substring(0, MAX_LENGTH) + '\n\n... [Текст обрезан, показаны первые 15000 символов]';
+    }
+    
+    console.log(`✅ Extracted ${text.length} characters from ${fileName}`);
+    return text || `[Не удалось извлечь текст из ${fileName}]`;
+  } catch (error) {
+    console.error('❌ Error extracting text:', error);
+    return `[Ошибка чтения файла ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}]`;
+  }
+}
 
 // Функция для загрузки файла в OpenAI Files API
 async function uploadFileToOpenAI(fileUrl: string, fileName: string): Promise<string> {
@@ -31,8 +83,8 @@ async function uploadFileToOpenAI(fileUrl: string, fileName: string): Promise<st
       type: fileResponse.headers.get('content-type') || 'application/octet-stream' 
     });
     
-    // Загружаем в OpenAI
-    const uploadedFile = await openai.files.create({
+    // Загружаем в OpenAI напрямую (не через Worker прокси!)
+    const uploadedFile = await openaiDirect.files.create({
       file: file,
       purpose: 'assistants', // Для чтения и анализа документов
     });
@@ -66,8 +118,8 @@ async function downloadAndSaveFile(
       }
     );
     
-    // Получаем информацию о файле
-    const fileInfo = await openai.files.retrieve(fileId);
+    // Получаем информацию о файле (напрямую, не через Worker)
+    const fileInfo = await openaiDirect.files.retrieve(fileId);
     let fileName = fileInfo.filename || `output_${Date.now()}.txt`;
     
     console.log('🔍 Original filename from OpenAI:', fileName);
@@ -107,8 +159,8 @@ async function downloadAndSaveFile(
     
     console.log('📄 Transliterated file name:', fileName);
     
-    // Скачиваем содержимое файла
-    const fileContent = await openai.files.content(fileId);
+    // Скачиваем содержимое файла (напрямую, не через Worker)
+    const fileContent = await openaiDirect.files.content(fileId);
     const arrayBuffer = await fileContent.arrayBuffer();
     
     // Генерируем уникальное имя для Supabase
@@ -235,12 +287,13 @@ export async function POST(req: NextRequest) {
     ];
 
     // Добавляем текущее сообщение пользователя
-    const currentMessageContent: any[] = [
+    let currentMessageContent: any[] = [
       { type: 'text', text: message }
     ];
 
     // Загружаем файлы в OpenAI и собираем file_ids
     const fileIds: string[] = [];
+    const isDeepSeek = model.startsWith('deepseek-');
     
     if (attachments && attachments.length > 0) {
       const imageAttachments = attachments.filter((att: any) => 
@@ -251,31 +304,60 @@ export async function POST(req: NextRequest) {
         !att.file_type.startsWith('image/')
       );
       
-      // Изображения добавляем в content как раньше
-      imageAttachments.forEach((att: any) => {
-        currentMessageContent.push({
-          type: 'image_url',
-          image_url: {
-            url: att.file_url,
-            detail: 'high'
-          }
+      // Изображения добавляем в content (только для OpenAI с Vision)
+      if (!isDeepSeek) {
+        imageAttachments.forEach((att: any) => {
+          currentMessageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: att.file_url,
+              detail: 'high'
+            }
+          });
         });
-      });
+      } else if (imageAttachments.length > 0) {
+        // DeepSeek не поддерживает изображения
+        currentMessageContent[0].text += '\n\n⚠️ Изображения не поддерживаются моделью DeepSeek. Используйте GPT-4o для работы с изображениями.';
+      }
       
-      // Документы загружаем в OpenAI Files API
-      for (const doc of documentAttachments) {
-        try {
-          const fileId = await uploadFileToOpenAI(doc.file_url, doc.file_name);
-          fileIds.push(fileId);
-          
-          // PDF → Responses API, DOCX → Assistants API
-          if (doc.file_type === 'application/pdf') {
-            console.log(`📎 PDF Document attached: ${doc.file_name} (${fileId})`);
-          } else {
-            console.log(`📎 DOCX Document attached: ${doc.file_name} (${fileId}) - will use Assistants API`);
+      // Документы: для DeepSeek извлекаем текст (кроме PDF), для OpenAI используем Files API
+      if (isDeepSeek && documentAttachments.length > 0) {
+        console.log('📄 DeepSeek: Extracting text from documents...');
+        
+        const pdfDocs = documentAttachments.filter(d => d.file_type === 'application/pdf');
+        const textDocs = documentAttachments.filter(d => d.file_type !== 'application/pdf');
+        
+        // Для текстовых документов (DOCX, TXT) извлекаем текст
+        for (const doc of textDocs) {
+          try {
+            const extractedText = await extractTextFromDocument(doc.file_url, doc.file_name, doc.file_type);
+            currentMessageContent[0].text += `\n\n--- Содержимое файла "${doc.file_name}" ---\n${extractedText}\n--- Конец файла ---\n`;
+          } catch (error) {
+            console.error(`❌ Failed to extract text from ${doc.file_name}:`, error);
+            currentMessageContent[0].text += `\n\n⚠️ Не удалось прочитать файл "${doc.file_name}"`;
           }
-        } catch (error) {
-          console.error(`❌ Failed to upload ${doc.file_name}:`, error);
+        }
+        
+        // Для PDF показываем предупреждение
+        if (pdfDocs.length > 0) {
+          currentMessageContent[0].text += `\n\n⚠️ PDF файлы (${pdfDocs.map(d => d.file_name).join(', ')}) не поддерживаются моделью DeepSeek. Используйте GPT-4o для работы с PDF.`;
+        }
+      } else if (!isDeepSeek && documentAttachments.length > 0) {
+        // OpenAI: загружаем документы в Files API
+        for (const doc of documentAttachments) {
+          try {
+            const fileId = await uploadFileToOpenAI(doc.file_url, doc.file_name);
+            fileIds.push(fileId);
+            
+            // PDF → Responses API, DOCX → Assistants API
+            if (doc.file_type === 'application/pdf') {
+              console.log(`📎 PDF Document attached: ${doc.file_name} (${fileId})`);
+            } else {
+              console.log(`📎 DOCX Document attached: ${doc.file_name} (${fileId}) - will use Assistants API`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to upload ${doc.file_name}:`, error);
+          }
         }
       }
     }
@@ -571,13 +653,22 @@ doc.save('output.docx')
     } else {
       console.log('🔄 Using Chat Completions API');
       
+      // Выбираем клиент в зависимости от модели
+      const client = model.startsWith('deepseek-') ? deepseek : openai;
+      console.log(`📡 Using ${model.startsWith('deepseek-') ? 'DeepSeek' : 'OpenAI'} client for model: ${model}`);
+      
+      const startTime = Date.now();
+      
       // Используем обычный Chat Completions
-      completion = await openai.chat.completions.create({
+      completion = await client.chat.completions.create({
         model: model,
         messages: messages,
-        temperature: 0.7,
-        max_tokens: 1000,
+        temperature: 0.5, // Понижаем для более предсказуемых и быстрых ответов
+        max_tokens: model.startsWith('deepseek-') ? 1500 : 2000, // Для DeepSeek меньше токенов = быстрее
       });
+      
+      const responseTime = Date.now() - startTime;
+      console.log(`⏱️ Response time: ${responseTime}ms`);
       
       assistantMessage = completion.choices[0]?.message?.content || 'Ошибка ответа';
       usage = completion.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };

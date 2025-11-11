@@ -30,8 +30,10 @@ interface ModelConfig {
 }
 
 const MODELS: ModelConfig[] = [
-  { name: 'gpt-4o', displayName: 'GPT-4o 🎨 (Vision)', pricePrompt: 2.5, priceCompletion: 10 },
+  { name: 'deepseek-chat', displayName: '🚀 DeepSeek Chat (Дёшево!)', pricePrompt: 0.28, priceCompletion: 0.42 },
   { name: 'gpt-4o-mini', displayName: 'GPT-4o Mini 🎨', pricePrompt: 0.15, priceCompletion: 0.6 },
+  { name: 'gpt-4o', displayName: 'GPT-4o 🎨 (Vision)', pricePrompt: 2.5, priceCompletion: 10 },
+  { name: 'deepseek-coder', displayName: '💻 DeepSeek Coder', pricePrompt: 0.28, priceCompletion: 0.42 },
   { name: 'gpt-4-turbo', displayName: 'GPT-4 Turbo', pricePrompt: 10, priceCompletion: 30 },
   { name: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo', pricePrompt: 0.5, priceCompletion: 1.5 },
 ];
@@ -41,7 +43,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
+  const [selectedModel, setSelectedModel] = useState('deepseek-chat');
   const [stats, setStats] = useState({ totalTokens: 0, totalCost: 0, messageCount: 0 });
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
