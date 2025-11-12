@@ -117,8 +117,8 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
       return;
     }
 
-    // Если перетаскиваем файл между папками
-    if (draggedFile && targetFolder !== currentFolder) {
+    // Если перетаскиваем файл из списка
+    if (draggedFile) {
       setUploading(true);
       await moveFile(draggedFile, targetFolder);
       setUploading(false);
@@ -499,10 +499,11 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
       {/* Single Panel Layout - как в проводнике */}
       <div className="p-4">
-        {/* Breadcrumbs */}
-        {currentFolder && (
+        {/* Breadcrumbs - показываем всегда когда есть currentFolder или тащим файл */}
+        {(currentFolder || draggedFile) && (
           <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
             <button 
+              data-folder-path="__root__"
               onClick={() => {
                 setCurrentFolder(undefined);
                 setSelectedFolder(null);
@@ -525,21 +526,47 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
               className={`px-2 py-1 rounded transition-colors ${
                 dragOverFolder === '__root__'
                   ? 'bg-blue-100 text-blue-700 font-semibold border-2 border-blue-400'
-                  : 'hover:text-blue-600 hover:bg-blue-50'
+                  : !currentFolder && draggedFile
+                    ? 'bg-gray-100 text-gray-700 font-medium'
+                    : 'hover:text-blue-600 hover:bg-blue-50'
               }`}
             >
-              📁 Все файлы (корень)
+              📁 Корень
             </button>
-            {currentFolder.split('/').map((part, idx, arr) => (
+            {currentFolder && currentFolder.split('/').map((part, idx, arr) => (
               <div key={idx} className="flex items-center gap-2">
                 <span>/</span>
                 <button 
+                  data-folder-path={arr.slice(0, idx + 1).join('/')}
                   onClick={() => {
                     const newPath = arr.slice(0, idx + 1).join('/');
                     setCurrentFolder(newPath);
                     setSelectedFolder(newPath);
                   }}
-                  className={idx === arr.length - 1 ? 'font-medium' : 'hover:text-blue-600'}
+                  onDragOver={(e) => { 
+                    e.preventDefault(); 
+                    e.stopPropagation();
+                    const folderPath = arr.slice(0, idx + 1).join('/');
+                    setDragOverFolder(folderPath);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDragOverFolder(null);
+                  }}
+                  onDrop={(e) => { 
+                    e.stopPropagation(); 
+                    const folderPath = arr.slice(0, idx + 1).join('/');
+                    setDragOverFolder(null);
+                    handleDrop(e, folderPath);
+                  }}
+                  className={`px-2 py-1 rounded transition-colors ${
+                    dragOverFolder === arr.slice(0, idx + 1).join('/')
+                      ? 'bg-blue-100 text-blue-700 font-semibold border-2 border-blue-400'
+                      : idx === arr.length - 1 
+                        ? 'font-medium' 
+                        : 'hover:text-blue-600 hover:bg-blue-50'
+                  }`}
                 >
                   {part}
                 </button>
