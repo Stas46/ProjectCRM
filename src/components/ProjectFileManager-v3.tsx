@@ -427,11 +427,9 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             {files.map((file) => (
               <div
                 key={file.id}
-                draggable={true}
-                onDragStart={(e) => {
+                draggable
+                onDragStart={() => {
                   console.log('🎯 DragStart файл:', file.id, file.file_name);
-                  e.dataTransfer.effectAllowed = 'move';
-                  e.dataTransfer.setData('text/plain', file.id); // Добавляем данные
                   setDraggedFile(file.id);
                 }}
                 onDragEnd={() => {
@@ -448,16 +446,13 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                   href={file.public_url} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  draggable={false}
                   className="text-sm flex-1 truncate hover:text-blue-600"
                   onClick={(e) => e.stopPropagation()}
-                  onDragStart={(e) => e.preventDefault()}
                 >
                   {file.file_name}
                 </a>
-                <span className="text-xs text-gray-400" draggable={false}>{formatBytes(file.file_size)}</span>
+                <span className="text-xs text-gray-400">{formatBytes(file.file_size)}</span>
                 <button
-                  draggable={false}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(file.id, file.file_name);
