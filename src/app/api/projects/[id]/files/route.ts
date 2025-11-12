@@ -401,12 +401,15 @@ export async function PATCH(
     const baseName = file.file_name.substring(0, file.file_name.lastIndexOf('.')) || file.file_name;
     const sanitizedName = transliterate(baseName).replace(/[^a-zA-Z0-9._-]/g, '_');
     const finalFileName = `${timestamp}_${sanitizedName}.${fileExt}`;
-    const newFolderPath = target_folder ? `${target_folder}` : '';
+    
+    // Транслитерируем название папки для валидного Storage path
+    const newFolderPath = target_folder ? transliterate(target_folder).replace(/[^a-zA-Z0-9/_-]/g, '_') : '';
     const newFilePath = newFolderPath 
       ? `projects/${projectId}/${newFolderPath}/${finalFileName}`
       : `projects/${projectId}/${finalFileName}`;
 
-    console.log(`🗂️ Новый путь: ${newFilePath}`);
+    console.log(`🗂️ Перемещение из папки "${file.folder || 'root'}" в папку "${target_folder || 'root'}"`);
+    console.log(`🗂️ Storage path: ${newFilePath}`);
 
     // Копируем файл в новое место в Storage
     const { data: copyData, error: copyError } = await supabase

@@ -48,7 +48,12 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedFile, setDraggedFile] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // для подсветки папки при drag-over
   const [allFolders, setAllFolders] = useState<FolderStructure[]>([]);
+  
+  // Touch события для мобильных устройств
+  const [touchStart, setTouchStart] = useState<{ fileId: string; x: number; y: number } | null>(null);
+  const [touchCurrent, setTouchCurrent] = useState<{ x: number; y: number } | null>(null);
   
   const { files, folders, loading, error, uploadFile, deleteFile, refresh } = useProjectFiles(projectId, currentFolder);
 
@@ -157,6 +162,49 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
     }
   };
 
+  // Touch события для мобильных устройств
+  const handleTouchStart = (e: React.TouchEvent, fileId: string) => {
+    const touch = e.touches[0];
+    setTouchStart({ fileId, x: touch.clientX, y: touch.clientY });
+    setDraggedFile(fileId);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStart) return;
+    const touch = e.touches[0];
+    setTouchCurrent({ x: touch.clientX, y: touch.clientY });
+    
+    // Визуальный эффект перетаскивания
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (element && element.hasAttribute('data-folder-path')) {
+      const folderPath = element.getAttribute('data-folder-path');
+      setDragOverFolder(folderPath);
+    } else {
+      setDragOverFolder(null);
+    }
+  };
+
+  const handleTouchEnd = async (e: React.TouchEvent) => {
+    if (!touchStart || !draggedFile) return;
+    
+    const touch = e.changedTouches[0];
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    if (element && element.hasAttribute('data-folder-path')) {
+      const targetFolder = element.getAttribute('data-folder-path');
+      if (targetFolder && targetFolder !== currentFolder) {
+        setUploading(true);
+        await moveFile(draggedFile, targetFolder);
+        setUploading(false);
+      }
+    }
+    
+    setTouchStart(null);
+    setTouchCurrent(null);
+    setDraggedFile(null);
+    setDragOverFolder(null);
+  };
+
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
 
@@ -252,8 +300,10 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             {/* Виртуальная папка Счета (только на верхнем уровне) */}
             {!currentFolder && invoices.length > 0 && (
               <div
-                onClick={() => setSelectedFolder('__invoices__')}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer group"
+                onClick={() => {
+                  setSelectedFolder('__invoices__');
+                }}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded cursor-pointer group transition-colors"
               >
                 <Receipt className="w-4 h-4 text-blue-500 flex-shrink-0" />
                 <span className="text-sm font-medium flex-1">Счета</span>
@@ -265,13 +315,31 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             {folders.map((folder) => (
               <div
                 key={folder.path}
-                onDoubleClick={() => {
+                data-folder-path={folder.path}
+                onClick={() => {
                   setSelectedFolder(folder.path);
                   setCurrentFolder(folder.path);
                 }}
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={(e) => { e.stopPropagation(); handleDrop(e, folder.path); }}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer group"
+                onDragOver={(e) => { 
+                  e.preventDefault(); 
+                  e.stopPropagation(); 
+                  setDragOverFolder(folder.path);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverFolder(null);
+                }}
+                onDrop={(e) => { 
+                  e.stopPropagation(); 
+                  setDragOverFolder(null);
+                  handleDrop(e, folder.path); 
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer group transition-colors ${
+                  dragOverFolder === folder.path 
+                    ? 'bg-blue-100 border-2 border-blue-400' 
+                    : 'hover:bg-blue-50 hover:text-blue-600 border-2 border-transparent'
+                }`}
               >
                 <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
                 <span className="text-sm font-medium flex-1 truncate">{folder.name}</span>
@@ -282,33 +350,36 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             {/* Файлы снизу */}
             {files.map((file) => (
               <div
-              key={file.id}
-              draggable
-              onDragStart={() => setDraggedFile(file.id)}
-              onDragEnd={() => setDraggedFile(null)}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded group cursor-move"
-            >
-              {getFileIcon(file.file_type)}
-              <a 
-                href={file.public_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-sm flex-1 truncate hover:text-blue-600"
-                onClick={(e) => e.stopPropagation()}
+                key={file.id}
+                draggable
+                onDragStart={() => setDraggedFile(file.id)}
+                onDragEnd={() => setDraggedFile(null)}
+                onTouchStart={(e) => handleTouchStart(e, file.id)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded group cursor-move"
               >
-                {file.file_name}
-              </a>
-              <span className="text-xs text-gray-400">{formatBytes(file.file_size)}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(file.id, file.file_name);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-              </button>
-            </div>
+                {getFileIcon(file.file_type)}
+                <a 
+                  href={file.public_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sm flex-1 truncate hover:text-blue-600"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {file.file_name}
+                </a>
+                <span className="text-xs text-gray-400">{formatBytes(file.file_size)}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(file.id, file.file_name);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                </button>
+              </div>
             ))}
           </>
         )}
