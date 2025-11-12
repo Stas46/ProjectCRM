@@ -431,6 +431,7 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 onDragStart={(e) => {
                   console.log('🎯 DragStart файл:', file.id, file.file_name);
                   e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', file.id); // Добавляем данные
                   setDraggedFile(file.id);
                 }}
                 onDragEnd={() => {
@@ -456,6 +457,7 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 </a>
                 <span className="text-xs text-gray-400" draggable={false}>{formatBytes(file.file_size)}</span>
                 <button
+                  draggable={false}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(file.id, file.file_name);
