@@ -124,18 +124,21 @@ async function uploadFileToStorage(file: File): Promise<string | null> {
       const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
       
       // Определяем content-type на основе расширения файла
+      // Для некоторых типов Supabase Storage требует application/octet-stream
       if (fileExt === 'pdf') {
         contentType = 'application/pdf';
       } else if (fileExt === 'xlsx') {
         contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       } else if (fileExt === 'xls') {
-        contentType = 'application/vnd.ms-excel';
+        // Supabase не поддерживает application/vnd.ms-excel, используем octet-stream
+        contentType = 'application/octet-stream';
       } else if (fileExt === 'xlsm') {
         contentType = 'application/vnd.ms-excel.sheet.macroEnabled.12';
       } else if (fileExt === 'docx') {
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       } else if (fileExt === 'doc') {
-        contentType = 'application/msword';
+        // Supabase не поддерживает application/msword, используем octet-stream
+        contentType = 'application/octet-stream';
       } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
         contentType = 'image/jpeg';
       } else if (fileExt === 'png') {
