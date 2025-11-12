@@ -29,6 +29,7 @@ export function ProjectFileManager({ projectId, userId }: ProjectFileManagerProp
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   const { files, folders, loading, error, uploadFile, deleteFile, refresh } = useProjectFiles(projectId, currentFolder);
 
@@ -66,6 +67,32 @@ export function ProjectFileManager({ projectId, userId }: ProjectFileManagerProp
     setCurrentFolder(folderPath);
     setNewFolderName('');
     setShowNewFolder(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const result = await uploadFile(file, currentFolder, userId);
+    setUploading(false);
+
+    if (!result.success) {
+      alert(`Ошибка: ${result.error}`);
+    }
   };
 
   const getFileIcon = (fileType: string) => {
@@ -121,18 +148,17 @@ export function ProjectFileManager({ projectId, userId }: ProjectFileManagerProp
             Новая папка
           </Button>
 
-          <label className="cursor-pointer">
+          <div>
             <input
               type="file"
+              id="file-upload"
               className="hidden"
               onChange={handleFileUpload}
               disabled={uploading}
             />
-            <Button
-              variant="default"
-              size="sm"
-              disabled={uploading}
-              type="button"
+            <label 
+              htmlFor="file-upload" 
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 cursor-pointer"
             >
               {uploading ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -140,8 +166,8 @@ export function ProjectFileManager({ projectId, userId }: ProjectFileManagerProp
                 <Upload className="w-4 h-4 mr-2" />
               )}
               Загрузить файл
-            </Button>
-          </label>
+            </label>
+          </div>
         </div>
 
         {/* Создание новой папки */}
@@ -192,6 +218,23 @@ export function ProjectFileManager({ projectId, userId }: ProjectFileManagerProp
             </div>
           </div>
         )}
+
+        {/* Drag & Drop зона */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`
+            border-2 border-dashed rounded-lg p-8 mb-4 text-center transition-colors
+            ${isDragging ? 'border-primary bg-primary/10' : 'border-gray-300'}
+            ${uploading ? 'opacity-50 pointer-events-none' : ''}
+          `}
+        >
+          <Upload className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+          <p className="text-sm text-gray-600">
+            {isDragging ? 'Отпустите файл для загрузки' : 'Перетащите файл сюда или используйте кнопку выше'}
+          </p>
+        </div>
 
         {/* Загрузка */}
         {loading && (
