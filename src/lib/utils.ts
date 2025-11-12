@@ -50,6 +50,21 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 /**
+ * Форматирует размер файла в читаемый вид
+ * @param bytes Размер в байтах
+ * @returns Отформатированная строка (например, "1.5 MB")
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+/**
  * Преобразует размер файла в читаемый формат
  * @param bytes Размер в байтах
  * @returns Строка с размером (например, "1.5 МБ")
