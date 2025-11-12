@@ -119,20 +119,30 @@ async function uploadFileToStorage(file: File): Promise<string | null> {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       
-      // Определяем MIME-type
-      // Для Excel файлов используем application/octet-stream, т.к. Supabase не поддерживает некоторые Excel MIME-типы
-      let contentType = file.type;
+      // Определяем правильный MIME-type для всех типов файлов
+      let contentType = file.type || 'application/octet-stream';
       const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
       
-      if (isExcel) {
-        contentType = 'application/octet-stream';
-      } else if (fileExt === 'pdf') {
+      // Определяем content-type на основе расширения файла
+      if (fileExt === 'pdf') {
         contentType = 'application/pdf';
+      } else if (fileExt === 'xlsx') {
+        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      } else if (fileExt === 'xls') {
+        contentType = 'application/vnd.ms-excel';
+      } else if (fileExt === 'xlsm') {
+        contentType = 'application/vnd.ms-excel.sheet.macroEnabled.12';
       } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
         contentType = 'image/jpeg';
       } else if (fileExt === 'png') {
         contentType = 'image/png';
+      } else if (fileExt === 'gif') {
+        contentType = 'image/gif';
+      } else if (fileExt === 'webp') {
+        contentType = 'image/webp';
       }
+      
+      console.log(`📎 Загружаем файл: ${fileName} (${contentType})`);
       
       const { data, error } = await supabase.storage
         .from('invoice-files')
@@ -608,33 +618,30 @@ export async function POST(request: NextRequest) {
       console.log(`🔗 Привязка к проекту: ${projectId}`);
     }
     
-    // Шаг 1: Загружаем файл в Storage (кроме Excel - их Storage не поддерживает)
+    // Шаг 1: Загружаем файл в Storage (все типы файлов)
     let fileUrl: string | null = null;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
     
-    if (!isExcel) {
-      try {
-        fileUrl = await uploadFileToStorage(file);
-        logger.info('Файл загружен в Storage', { requestId, fileUrl });
-      } catch (storageError) {
-        logger.error('Ошибка загрузки в Storage', { requestId, error: String(storageError) });
-        const errorMessage = storageError instanceof Error ? storageError.message : 'Ошибка загрузки файла в Storage';
-        console.error('❌ Storage error:', errorMessage);
-        return NextResponse.json({ 
-          error: errorMessage,
-          details: 'Проверьте файл STORAGE-SETUP.md для инструкций по настройке'
-        }, { status: 500 });
-      }
-      
-      if (!fileUrl) {
-        return NextResponse.json({ 
-          error: 'Не удалось загрузить файл в Storage',
-          details: 'Проверьте настройки Supabase Storage'
-        }, { status: 500 });
-      }
-    } else {
-      console.log('📊 Excel файл - обрабатываем без загрузки в Storage (Storage не поддерживает Excel)');
+    try {
+      fileUrl = await uploadFileToStorage(file);
+      logger.info('Файл загружен в Storage', { requestId, fileUrl, fileType: isExcel ? 'Excel' : 'PDF/Image' });
+      console.log(`✅ Файл ${file.name} успешно загружен: ${fileUrl}`);
+    } catch (storageError) {
+      logger.error('Ошибка загрузки в Storage', { requestId, error: String(storageError) });
+      const errorMessage = storageError instanceof Error ? storageError.message : 'Ошибка загрузки файла в Storage';
+      console.error('❌ Storage error:', errorMessage);
+      return NextResponse.json({ 
+        error: errorMessage,
+        details: 'Проверьте файл STORAGE-SETUP.md для инструкций по настройке'
+      }, { status: 500 });
+    }
+    
+    if (!fileUrl) {
+      return NextResponse.json({ 
+        error: 'Не удалось загрузить файл в Storage',
+        details: 'Проверьте настройки Supabase Storage'
+      }, { status: 500 });
     }
     
     // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Excel)
