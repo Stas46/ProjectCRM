@@ -70,6 +70,10 @@ export async function GET(
     if (folder) {
       console.log(`📁 Фильтр по папке: ${folder}`);
       query = query.eq('folder', folder);
+    } else {
+      // Для корневой папки показываем только файлы без папки (folder IS NULL)
+      console.log(`📁 Фильтр: только корневые файлы (folder IS NULL)`);
+      query = query.is('folder', null);
     }
 
     const { data: files, error } = await query;

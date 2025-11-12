@@ -143,7 +143,10 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
       if (data.success) {
         console.log('✅ Файл перемещен');
-        refresh(); // Обновляем список файлов
+        // Принудительно обновляем список - важно для корректного отображения
+        await refresh();
+        // Небольшая задержка и второе обновление для надежности
+        setTimeout(() => refresh(), 100);
       } else {
         console.error('❌ Ошибка перемещения:', data.error);
         alert(`Ошибка: ${data.error}`);
