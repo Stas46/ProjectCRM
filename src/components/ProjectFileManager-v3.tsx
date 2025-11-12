@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useProjectFiles } from '@/hooks/useProjectFiles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,10 +46,13 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [movingFileId, setMovingFileId] = useState<string | null>(null); // ID файла который сейчас перемещается
   const [isDragging, setIsDragging] = useState(false);
   const [draggedFile, setDraggedFile] = useState<string | null>(null);
-  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // для подсветки папки при drag-over
-  const [allFolders, setAllFolders] = useState<FolderStructure[]>([]);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  
+  // Контекстное меню
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; fileId: string; fileName: string } | null>(null);
   
   // Touch события для мобильных устройств
   const [touchStart, setTouchStart] = useState<{ fileId: string; x: number; y: number } | null>(null);
@@ -57,8 +60,8 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
   
   const { files, folders, loading, error, uploadFile, deleteFile, refresh } = useProjectFiles(projectId, currentFolder);
 
-  // Формируем полную структуру папок с виртуальной папкой "Счета"
-  useEffect(() => {
+  // Формируем полную структуру папок с виртуальной папкой "Счета" - кэшируем для производительности
+  const allFolders = useMemo(() => {
     const structure: FolderStructure[] = [
       {
         name: `Счета (${invoices.length})`,
@@ -78,8 +81,17 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
       });
     });
 
-    setAllFolders(structure);
+    return structure;
   }, [folders, invoices.length]);
+
+  // Закрыть контекстное меню при клике вне его
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    if (contextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [contextMenu]);
 
   const handleFileUpload = async (file: File) => {
     if (!file) return;
@@ -143,10 +155,8 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
       if (data.success) {
         console.log('✅ Файл перемещен');
-        // Принудительно обновляем список - важно для корректного отображения
+        // Одно обновление после успешного перемещения
         await refresh();
-        // Небольшая задержка и второе обновление для надежности
-        setTimeout(() => refresh(), 100);
       } else {
         console.error('❌ Ошибка перемещения:', data.error);
         alert(`Ошибка: ${data.error}`);
@@ -155,6 +165,19 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
       console.error('❌ Ошибка перемещения файла:', error);
       alert('Ошибка перемещения файла');
     }
+  };
+
+  const handleMoveFileToFolder = async (fileId: string, targetFolder?: string) => {
+    // Защита от повторного вызова если файл уже перемещается
+    if (movingFileId) {
+      console.log('⚠️ Файл уже перемещается, ожидайте');
+      return;
+    }
+    
+    setContextMenu(null);
+    setMovingFileId(fileId);
+    await moveFile(fileId, targetFolder);
+    setMovingFileId(null);
   };
 
   const handleDelete = async (fileId: string, fileName: string) => {
@@ -402,6 +425,10 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 onTouchStart={(e) => handleTouchStart(e, file.id)}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id, fileName: file.file_name });
+                }}
                 className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded group cursor-move"
               >
                 {getFileIcon(file.file_type)}
@@ -409,12 +436,15 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                   href={file.public_url} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  draggable="false"
+                  draggable={false}
                   className="text-sm flex-1 truncate hover:text-blue-600"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {file.file_name}
                 </a>
+                {movingFileId === file.id && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                )}
                 <span className="text-xs text-gray-400">{formatBytes(file.file_size)}</span>
                 <button
                   onClick={(e) => {
@@ -580,6 +610,53 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
         <div className="overflow-y-auto" style={{ maxHeight: '500px' }}>
           {renderContent()}
         </div>
+
+        {/* Контекстное меню */}
+        {contextMenu && (
+          <div
+            className="fixed bg-white shadow-lg rounded-lg border border-gray-200 py-1 z-50"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
+              {contextMenu.fileName}
+            </div>
+            
+            {currentFolder ? (
+              <button
+                onClick={() => handleMoveFileToFolder(contextMenu.fileId, undefined)}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm flex items-center gap-2"
+              >
+                <Folder className="w-4 h-4" />
+                Переместить в корень
+              </button>
+            ) : null}
+
+            {folders.map((folder) => (
+              <button
+                key={folder.path}
+                onClick={() => handleMoveFileToFolder(contextMenu.fileId, folder.path)}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm flex items-center gap-2"
+              >
+                <Folder className="w-4 h-4 text-yellow-500" />
+                Переместить в "{folder.name}"
+              </button>
+            ))}
+
+            <div className="border-t border-gray-100 mt-1">
+              <button
+                onClick={() => {
+                  setContextMenu(null);
+                  handleDelete(contextMenu.fileId, contextMenu.fileName);
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600 flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить файл
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

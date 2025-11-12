@@ -29,7 +29,9 @@ export interface Task {
 
 export interface Project {
   id: string;
-  title: string;
+  title?: string;
+  project_name?: string;
+  project_number?: string;
   client_name?: string;
   client_phone?: string;
   client_email?: string;
@@ -37,7 +39,10 @@ export interface Project {
   priority?: 'low' | 'medium' | 'high';
   deadline?: string;
   total_cost?: number;
+  budget?: number;
+  notes?: string; // Заметки проекта
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Invoice {
@@ -48,13 +53,22 @@ export interface Invoice {
   total_amount?: number;
   paid_status?: boolean;
   project_id?: string;
+  category?: string; // Категория товаров (профиль, фурнитура и т.д.)
+  items?: string; // Описание товаров
   created_at: string;
+  suppliers?: {
+    name: string;
+    inn?: string;
+  };
 }
 
 export interface DataQueryFilters {
   status?: string;
   priority?: string;
   project_id?: string;
+  project_name?: string; // Частичный поиск по названию проекта
+  category?: string; // Категория товаров в счетах
+  supplier_name?: string; // Поиск по поставщику
   date_from?: string;
   date_to?: string;
   limit?: number;
@@ -72,6 +86,22 @@ export async function getUserTasks(
   try {
     const supabase = getSupabaseClient();
     
+    // Если передан project_name, сначала найдем проекты
+    let projectIds: string[] | undefined;
+    if (filters?.project_name) {
+      const projectsResult = await getUserProjects(userId, { 
+        project_name: filters.project_name 
+      });
+      if (projectsResult.data && projectsResult.data.length > 0) {
+        projectIds = projectsResult.data.map(p => p.id);
+        console.log(`🔍 Найдено проектов по "${filters.project_name}":`, projectIds.length);
+      } else {
+        // Проекты не найдены - вернем пустой результат
+        console.log(`⚠️ Проекты по "${filters.project_name}" не найдены`);
+        return { data: [], error: null };
+      }
+    }
+    
     let query = supabase
       .from('tasks')
       .select('*')
@@ -87,6 +117,10 @@ export async function getUserTasks(
     }
     if (filters?.project_id) {
       query = query.eq('project_id', filters.project_id);
+    }
+    // Если нашли проекты по названию, ищем задачи по ним
+    if (projectIds && projectIds.length > 0) {
+      query = query.in('project_id', projectIds);
     }
     if (filters?.date_from) {
       query = query.gte('created_at', filters.date_from);
@@ -133,6 +167,10 @@ export async function getUserProjects(
     if (filters?.priority) {
       query = query.eq('priority', filters.priority);
     }
+    // Частичный поиск по названию проекта (регистронезависимый)
+    if (filters?.project_name) {
+      query = query.ilike('project_name', `%${filters.project_name}%`);
+    }
     if (filters?.limit) {
       query = query.limit(filters.limit);
     }
@@ -152,7 +190,7 @@ export async function getUserProjects(
 }
 
 /**
- * Получить счета
+ * Получить счета с поддержкой фильтров по категориям и поставщикам
  */
 export async function getUserInvoices(
   userId: string,
@@ -163,14 +201,28 @@ export async function getUserInvoices(
     
     let query = supabase
       .from('invoices')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(`
+        *,
+        suppliers (
+          name,
+          inn
+        )
+      `)
+      .order('invoice_date', { ascending: false });
 
     if (filters?.paid_status !== undefined) {
       query = query.eq('paid_status', filters.paid_status);
     }
     if (filters?.project_id) {
       query = query.eq('project_id', filters.project_id);
+    }
+    // Фильтр по категории товаров
+    if (filters?.category) {
+      query = query.ilike('category', `%${filters.category}%`);
+    }
+    // Фильтр по поставщику
+    if (filters?.supplier_name) {
+      query = query.ilike('supplier_name', `%${filters.supplier_name}%`);
     }
     if (filters?.limit) {
       query = query.limit(filters.limit);
@@ -215,6 +267,100 @@ export async function getProjectById(
     return { data: data as Project, error: null };
   } catch (error: any) {
     console.error('❌ Exception in getProjectById:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Получить статистику по бюджету проекта
+ */
+export async function getProjectBudgetStats(
+  projectId: string
+): Promise<{ 
+  data: {
+    project: Project;
+    budget: number;
+    spent: number;
+    remaining: number;
+    invoices_by_category: Array<{ category: string; total: number; count: number }>;
+    invoices_by_supplier: Array<{ supplier: string; total: number; count: number }>;
+    total_invoices: number;
+    paid_invoices: number;
+    unpaid_invoices: number;
+  } | null; 
+  error: string | null 
+}> {
+  try {
+    const supabase = getSupabaseClient();
+    
+    // Получаем проект
+    const { data: project, error: projectError } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .single();
+
+    if (projectError || !project) {
+      return { data: null, error: projectError?.message || 'Project not found' };
+    }
+
+    // Получаем все счета проекта
+    const { data: invoices, error: invoicesError } = await supabase
+      .from('invoices')
+      .select(`
+        *,
+        suppliers (
+          name
+        )
+      `)
+      .eq('project_id', projectId);
+
+    if (invoicesError) {
+      return { data: null, error: invoicesError.message };
+    }
+
+    // Считаем статистику
+    const totalSpent = invoices?.reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
+    const budget = project.budget || project.total_cost || 0;
+    const remaining = budget - totalSpent;
+
+    // Группируем по категориям
+    const byCategory = invoices?.reduce((acc, inv) => {
+      const cat = inv.category || 'Без категории';
+      if (!acc[cat]) acc[cat] = { category: cat, total: 0, count: 0 };
+      acc[cat].total += inv.total_amount || 0;
+      acc[cat].count += 1;
+      return acc;
+    }, {} as Record<string, { category: string; total: number; count: number }>);
+
+    // Группируем по поставщикам
+    const bySupplier = invoices?.reduce((acc, inv) => {
+      const supplier = inv.suppliers?.name || inv.supplier_name || 'Неизвестный поставщик';
+      if (!acc[supplier]) acc[supplier] = { supplier, total: 0, count: 0 };
+      acc[supplier].total += inv.total_amount || 0;
+      acc[supplier].count += 1;
+      return acc;
+    }, {} as Record<string, { supplier: string; total: number; count: number }>);
+
+    const paidCount = invoices?.filter(inv => inv.paid_status).length || 0;
+    const unpaidCount = (invoices?.length || 0) - paidCount;
+
+    return {
+      data: {
+        project: project as Project,
+        budget,
+        spent: totalSpent,
+        remaining,
+        invoices_by_category: Object.values(byCategory || {}),
+        invoices_by_supplier: Object.values(bySupplier || {}),
+        total_invoices: invoices?.length || 0,
+        paid_invoices: paidCount,
+        unpaid_invoices: unpaidCount
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('❌ Exception in getProjectBudgetStats:', error);
     return { data: null, error: error.message };
   }
 }
@@ -393,12 +539,14 @@ export function formatProjectsForAI(projects: Project[]): string {
     const status = statusMap[project.status] || project.status;
     const client = project.client_name ? `\n   Клиент: ${project.client_name}` : '';
     const phone = project.client_phone ? `\n   Телефон: ${project.client_phone}` : '';
+    const budget = project.budget ? `\n   Бюджет: ${project.budget.toLocaleString('ru-RU')} ₽` : '';
     const cost = project.total_cost ? `\n   Стоимость: ${project.total_cost.toLocaleString('ru-RU')} ₽` : '';
     const deadline = project.deadline ? `\n   Дедлайн: ${new Date(project.deadline).toLocaleDateString('ru-RU')}` : '';
+    const notes = project.notes ? `\n   📝 Заметки: ${project.notes}` : '';
     
-    return `${index + 1}. **${project.title}**
+    return `${index + 1}. **${project.project_name || project.title}**
    Статус: ${status}
-   Приоритет: ${priority}${client}${phone}${cost}${deadline}`;
+   Приоритет: ${priority}${client}${phone}${budget}${cost}${deadline}${notes}`;
   }).join('\n\n');
 
   return `Найдено проектов: ${projects.length}\n\n${formatted}`;
@@ -465,4 +613,104 @@ export function parseDateRange(text: string): { date_from?: string; date_to?: st
   }
 
   return {};
+}
+
+/**
+ * Создать саммари по задачам проекта
+ */
+export function createTasksSummary(tasks: Task[]): string {
+  if (!tasks || tasks.length === 0) {
+    return 'Нет задач для анализа.';
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Группировка по статусам
+  const byStatus = {
+    done: tasks.filter(t => t.status === 'done'),
+    in_progress: tasks.filter(t => t.status === 'in_progress'),
+    todo: tasks.filter(t => t.status === 'todo')
+  };
+
+  // Группировка по приоритетам
+  const byPriority = {
+    high: tasks.filter(t => t.priority === 1),
+    medium: tasks.filter(t => t.priority === 2),
+    low: tasks.filter(t => t.priority === 3)
+  };
+
+  // Анализ сроков
+  const overdue = tasks.filter(t => {
+    if (!t.due_date || t.status === 'done') return false;
+    const dueDate = new Date(t.due_date);
+    return dueDate < today;
+  });
+
+  const dueToday = tasks.filter(t => {
+    if (!t.due_date || t.status === 'done') return false;
+    const dueDate = new Date(t.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    return dueDate.getTime() === today.getTime();
+  });
+
+  const dueSoon = tasks.filter(t => {
+    if (!t.due_date || t.status === 'done') return false;
+    const dueDate = new Date(t.due_date);
+    const inThreeDays = new Date(today);
+    inThreeDays.setDate(today.getDate() + 3);
+    return dueDate > today && dueDate <= inThreeDays;
+  });
+
+  let summary = '📊 САММАРИ ПО ЗАДАЧАМ\n\n';
+  summary += `Всего задач: ${tasks.length}\n\n`;
+
+  summary += '📈 По статусам:\n';
+  summary += `✅ Завершено: ${byStatus.done.length}\n`;
+  summary += `🔄 В работе: ${byStatus.in_progress.length}\n`;
+  summary += `⏳ Ожидает: ${byStatus.todo.length}\n\n`;
+
+  summary += '🎯 По приоритетам:\n';
+  summary += `🔴 Важные: ${byPriority.high.length}\n`;
+  summary += `🟡 Средние: ${byPriority.medium.length}\n`;
+  summary += `🟢 Низкие: ${byPriority.low.length}\n\n`;
+
+  if (overdue.length > 0) {
+    summary += `⚠️ ПРОСРОЧЕНО: ${overdue.length} задач!\n`;
+    overdue.slice(0, 3).forEach(t => {
+      summary += `   - ${t.title}\n`;
+    });
+    summary += '\n';
+  }
+
+  if (dueToday.length > 0) {
+    summary += `🔥 СРОК СЕГОДНЯ: ${dueToday.length} задач\n`;
+    dueToday.forEach(t => {
+      summary += `   - ${t.title}\n`;
+    });
+    summary += '\n';
+  }
+
+  if (dueSoon.length > 0) {
+    summary += `📅 СРОК В БЛИЖАЙШИЕ 3 ДНЯ: ${dueSoon.length} задач\n`;
+    dueSoon.slice(0, 3).forEach(t => {
+      const dueDate = new Date(t.due_date!);
+      summary += `   - ${t.title} (${dueDate.toLocaleDateString('ru-RU')})\n`;
+    });
+    summary += '\n';
+  }
+
+  // Топ-3 важные задачи в работе
+  const urgentInProgress = tasks
+    .filter(t => t.status === 'in_progress' && t.priority === 1)
+    .slice(0, 3);
+
+  if (urgentInProgress.length > 0) {
+    summary += '🔥 ВАЖНЫЕ ЗАДАЧИ В РАБОТЕ:\n';
+    urgentInProgress.forEach(t => {
+      summary += `   - ${t.title}\n`;
+    });
+  }
+
+  return summary;
 }

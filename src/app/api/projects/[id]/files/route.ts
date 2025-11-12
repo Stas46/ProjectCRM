@@ -398,51 +398,14 @@ export async function PATCH(
     }
 
     console.log(`📄 Файл: ${file.file_name}, текущая папка: ${file.folder || 'root'}`);
-
-    // Формируем новый путь в Storage
-    const timestamp = Date.now();
-    const fileExt = file.file_name.split('.').pop()?.toLowerCase();
-    const baseName = file.file_name.substring(0, file.file_name.lastIndexOf('.')) || file.file_name;
-    const sanitizedName = transliterate(baseName).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const finalFileName = `${timestamp}_${sanitizedName}.${fileExt}`;
-    
-    // Транслитерируем название папки для валидного Storage path
-    const newFolderPath = target_folder ? transliterate(target_folder).replace(/[^a-zA-Z0-9/_-]/g, '_') : '';
-    const newFilePath = newFolderPath 
-      ? `projects/${projectId}/${newFolderPath}/${finalFileName}`
-      : `projects/${projectId}/${finalFileName}`;
-
     console.log(`🗂️ Перемещение из папки "${file.folder || 'root'}" в папку "${target_folder || 'root'}"`);
-    console.log(`🗂️ Storage path: ${newFilePath}`);
 
-    // Копируем файл в новое место в Storage
-    const { data: copyData, error: copyError } = await supabase
-      .storage
-      .from('invoice-files')
-      .copy(file.file_path, newFilePath);
-
-    if (copyError) {
-      console.error('❌ Ошибка копирования файла:', copyError);
-      return NextResponse.json({ 
-        error: 'Ошибка перемещения файла' 
-      }, { status: 500 });
-    }
-
-    console.log(`✅ Файл скопирован в новое место`);
-
-    // Получаем новый публичный URL
-    const { data: { publicUrl } } = supabase
-      .storage
-      .from('invoice-files')
-      .getPublicUrl(newFilePath);
-
-    // Обновляем запись в БД
+    // Простое обновление метаданных - файл в Storage НЕ трогаем
+    // Физическое перемещение не требуется - Storage path остается прежним
     const { data: updatedFile, error: updateError } = await supabase
       .from('project_files')
       .update({
         folder: target_folder || null,
-        file_path: newFilePath,
-        public_url: publicUrl,
         updated_at: new Date().toISOString()
       })
       .eq('id', file_id)
@@ -451,27 +414,12 @@ export async function PATCH(
 
     if (updateError) {
       console.error('❌ Ошибка обновления БД:', updateError);
-      // Откатываем - удаляем скопированный файл
-      await supabase.storage.from('invoice-files').remove([newFilePath]);
       return NextResponse.json({ 
         error: 'Ошибка обновления метаданных' 
       }, { status: 500 });
     }
 
-    console.log(`✅ Метаданные обновлены`);
-
-    // Удаляем старый файл из Storage
-    const { error: deleteError } = await supabase
-      .storage
-      .from('invoice-files')
-      .remove([file.file_path]);
-
-    if (deleteError) {
-      console.error('⚠️ Ошибка удаления старого файла:', deleteError);
-    } else {
-      console.log(`✅ Старый файл удален`);
-    }
-
+    console.log(`✅ Файл перемещен в папку "${target_folder || 'root'}"`);
     console.log(`🔄 Перемещение завершено успешно`);
 
     return NextResponse.json({

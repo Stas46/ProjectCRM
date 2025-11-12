@@ -8,12 +8,14 @@ import {
   getUserTasks,
   getUserProjects,
   getUserInvoices,
+  getProjectBudgetStats,
   createTask,
   updateTask,
   formatTasksForAI,
   formatProjectsForAI,
   formatInvoicesForAI,
   parseDateRange,
+  createTasksSummary,
   type DataQueryFilters
 } from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
@@ -22,6 +24,54 @@ import { startAgentLog, consoleLog } from './agent-logger';
 function isUUID(str: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(str);
+}
+
+// Хранилище контекста диалога (в памяти)
+interface DialogContext {
+  userId: string;
+  lastProjects: Array<{ id: string; name: string }>;
+  lastInvoices: Array<{ id: string; number: string }>;
+  lastTasks: Array<{ id: string; title: string }>;
+  lastUpdated: Date;
+}
+
+const contextStore = new Map<string, DialogContext>();
+
+// Максимальное время жизни контекста (30 минут)
+const CONTEXT_TTL = 30 * 60 * 1000;
+
+// Сохранить контекст
+function saveContext(userId: string, updates: Partial<Omit<DialogContext, 'userId' | 'lastUpdated'>>) {
+  const existing = contextStore.get(userId) || {
+    userId,
+    lastProjects: [],
+    lastInvoices: [],
+    lastTasks: [],
+    lastUpdated: new Date()
+  };
+  
+  contextStore.set(userId, {
+    ...existing,
+    ...updates,
+    lastUpdated: new Date()
+  });
+  
+  consoleLog('info', 'Context saved', { userId, context: updates });
+}
+
+// Получить контекст
+function getContext(userId: string): DialogContext | null {
+  const context = contextStore.get(userId);
+  if (!context) return null;
+  
+  // Проверяем TTL
+  if (Date.now() - context.lastUpdated.getTime() > CONTEXT_TTL) {
+    contextStore.delete(userId);
+    consoleLog('info', 'Context expired', { userId });
+    return null;
+  }
+  
+  return context;
 }
 
 const deepseek = new OpenAI({
@@ -33,23 +83,50 @@ const deepseek = new OpenAI({
 const DATA_AGENT_SYSTEM_PROMPT = `
 Ты - ассистент CRM-системы для остекления и алюминиевых конструкций.
 
+ТЕКУЩАЯ ДАТА: ${new Date().toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
 Доступные действия:
-1. **get_tasks** - получить/показать/найти задачи
-2. **get_projects** - получить/показать проекты  
-3. **get_invoices** - получить/показать счета
-4. **create_task** - создать/добавить/напомнить задачу
-5. **update_task** - изменить/обновить/переместить задачу
+1. **get_tasks** - получить/показать/найти задачи, создать саммари по задачам
+2. **get_projects** - получить/показать проекты, показать заметки и детали
+3. **get_invoices** - получить/показать счета по проекту/категории/поставщику
+4. **get_budget** - показать бюджет проекта, расходы по категориям, остаток
+5. **create_task** - создать/добавить/напомнить задачу
+6. **update_task** - изменить/обновить/переместить задачу
 
 ВАЖНО: Если пользователь просит СОЗДАТЬ/ДОБАВИТЬ/НАПОМНИТЬ - используй create_task!
 Если ИЗМЕНИТЬ/ОБНОВИТЬ/ПЕРЕМЕСТИТЬ/ПОСТАВИТЬ ПРИОРИТЕТ - используй update_task!
 
 Формат ответа JSON:
 {
-  "action": "get_tasks" | "create_task" | "update_task" | "get_projects" | "get_invoices" | "unknown",
+  "action": "get_tasks" | "get_budget" | "create_task" | "update_task" | "get_projects" | "get_invoices" | "unknown",
   "filters": {...},  // только для get_*
   "data": {...},     // для create_* и update_*
-  "reasoning": "что понял"
+  "reasoning": "что понял",
+  "context_project": "название проекта", // если в диалоге упоминался проект
+  "need_summary": true // если нужно саммари по задачам
 }
+
+КОНТЕКСТ ДИАЛОГА - КРИТИЧЕСКИ ВАЖНО:
+1. ЗАПОМИНАЙ последние 2-3 упомянутых проекта, счета, задачи
+2. Если пользователь спрашивает про "этот/тот/такой/его/последний" - ищи в ПРЕДЫДУЩИХ сообщениях
+3. "сколько потратили на профиль" - фильтруй счета по category="профиль"
+4. "счета от Проведал" - фильтруй по supplier_name="Проведал"
+5. "бюджет проекта" / "сколько осталось" → action: "get_budget"
+6. "что покупали у поставщика" - показывай category и items из счетов
+7. "саммари по задачам" / "итог" / "статус" → need_summary: true
+
+УМНЫЙ ПОИСК ПО НАЗВАНИЯМ:
+- Используй ЧАСТИЧНОЕ совпадение: "южное" → найти все с "Южное шоссе"
+- "тсж" / "ТСЖ" / "окно тсж" → "Окно ТСЖ"
+- "школа" → найти проект "Школа" 
+- Игнорируй регистр и лишние пробелы
+
+КАТЕГОРИИ ТОВАРОВ (для фильтрации счетов):
+- "профиль" / "профиля" - алюминиевый профиль
+- "фурнитура" - ручки, петли, замки
+- "стекло" / "стеклопакет"
+- "уплотнитель" / "резина"
+- "крепёж" / "саморезы"
 
 РАСПОЗНАВАНИЕ ПРИОРИТЕТА (важность + срочность):
 - "важно и срочно" / "важно срочно" / "важная срочная" / "1" → priority: 1, status: "in_progress" (квадрант UV)
@@ -77,18 +154,34 @@ const DATA_AGENT_SYSTEM_PROMPT = `
 
 "переместить в 4" → {"action": "update_task", "data": {"target": "last", "priority": 2, "status": "todo"}, "reasoning": "В обычные"}
 
-Примеры ЧТЕНИЯ (get_*):
+Примеры ЧТЕНИЯ с КОНТЕКСТОМ:
 "какие задачи?" → {"action": "get_tasks", "filters": {}, "reasoning": "Показать задачи"}
 
 "покажи срочные задачи" → {"action": "get_tasks", "filters": {"status": "in_progress"}, "reasoning": "Срочные"}
 
+"саммари по задачам" → {"action": "get_tasks", "filters": {}, "need_summary": true, "reasoning": "Создать саммари"}
+
 "список проектов" → {"action": "get_projects", "filters": {}, "reasoning": "Показать проекты"}
+
+"задачи по южному шоссе" → {"action": "get_tasks", "filters": {"project_name": "южное шоссе"}, "reasoning": "Частичный поиск проекта", "context_project": "Южное шоссе"}
+
+"какой цвет конструкций в ТСЖ" → {"action": "get_projects", "filters": {"project_name": "окно тсж"}, "reasoning": "Детали проекта из контекста", "context_project": "Окно ТСЖ"}
+
+"бюджет проекта школа" → {"action": "get_budget", "filters": {"project_name": "школа"}, "reasoning": "Статистика по бюджету", "context_project": "Школа"}
+
+"сколько потратили на профиль" → {"action": "get_invoices", "filters": {"category": "профиль"}, "reasoning": "Счета по категории профиль"}
+
+"счета от Проведал" → {"action": "get_invoices", "filters": {"supplier_name": "Проведал"}, "reasoning": "Счета от поставщика"}
+
+"что покупали у Проведал" → {"action": "get_invoices", "filters": {"supplier_name": "Проведал"}, "reasoning": "Детали покупок у поставщика"}
+
+"счета по этому проекту" → {"action": "get_invoices", "filters": {"project_id": "из контекста"}, "reasoning": "Используем проект из диалога"}
 
 ВАЖНО: отвечай ТОЛЬКО валидным JSON.
 `.trim();
 
 export interface DataAgentRequest {
-  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'create_task' | 'update_task' | 'unknown';
+  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' | 'create_task' | 'update_task' | 'unknown';
   filters?: DataQueryFilters & { date_range?: string; paid_status?: boolean };
   data?: {
     title?: string;
@@ -103,10 +196,12 @@ export interface DataAgentRequest {
     task_id?: string; // прямой ID задачи
   };
   reasoning: string;
+  context_project?: string; // Название проекта из контекста диалога
+  need_summary?: boolean; // Нужно ли создать саммари по задачам
 }
 
 /**
- * Анализирует запрос пользователя через DeepSeek
+ * Анализирует запрос пользователя через DeepSeek с учётом контекста
  */
 async function analyzeUserIntent(
   userMessage: string,
@@ -118,11 +213,28 @@ async function analyzeUserIntent(
   try {
     consoleLog('info', 'Data Agent: Analyzing user intent...', { userMessage });
     
+    // Получаем контекст диалога
+    const context = getContext(userId);
+    let contextMessage = '';
+    
+    if (context) {
+      contextMessage = '\n\nКОНТЕКСТ ДИАЛОГА:\n';
+      if (context.lastProjects.length > 0) {
+        contextMessage += `Последние упомянутые проекты: ${context.lastProjects.map(p => p.name).join(', ')}\n`;
+      }
+      if (context.lastInvoices.length > 0) {
+        contextMessage += `Последние счета: ${context.lastInvoices.map(i => i.number).join(', ')}\n`;
+      }
+      if (context.lastTasks.length > 0) {
+        contextMessage += `Последние задачи: ${context.lastTasks.map(t => t.title).join(', ')}\n`;
+      }
+    }
+    
     const response = await deepseek.chat.completions.create({
       model: 'deepseek-chat',
       messages: [
         { role: 'system', content: DATA_AGENT_SYSTEM_PROMPT },
-        { role: 'user', content: userMessage }
+        { role: 'user', content: userMessage + contextMessage }
       ],
       temperature: 0.3, // Низкая температура для точности
       max_tokens: 500
@@ -232,8 +344,20 @@ async function fetchDataBasedOnIntent(
           consoleLog('warning', 'No tasks found', { filters: intent.filters });
         } else {
           rowsAffected = data.length;
-          result = formatTasksForAI(data);
-          consoleLog('success', `Found ${data.length} tasks`);
+          
+          // Сохраняем задачи в контекст
+          saveContext(userId, {
+            lastTasks: data.slice(0, 3).map(t => ({ id: t.id, title: t.title }))
+          });
+          
+          // Если нужно саммари - создаём его
+          if (intent.need_summary) {
+            result = createTasksSummary(data);
+            consoleLog('success', `Created summary for ${data.length} tasks`);
+          } else {
+            result = formatTasksForAI(data);
+            consoleLog('success', `Found ${data.length} tasks`);
+          }
         }
         break;
       }
@@ -249,6 +373,15 @@ async function fetchDataBasedOnIntent(
           result = 'У вас нет проектов по этим критериям.';
           consoleLog('warning', 'No projects found', { filters: intent.filters });
         } else {
+          rowsAffected = data.length;
+          
+          // Сохраняем проекты в контекст
+          saveContext(userId, {
+            lastProjects: data.slice(0, 3).map(p => ({ 
+              id: p.id, 
+              name: p.project_name || p.title || 'Без названия' 
+            }))
+          });
           rowsAffected = data.length;
           result = formatProjectsForAI(data);
           consoleLog('success', `Found ${data.length} projects`);
@@ -268,9 +401,107 @@ async function fetchDataBasedOnIntent(
           consoleLog('warning', 'No invoices found', { filters: intent.filters });
         } else {
           rowsAffected = data.length;
+          
+          // Сохраняем счета в контекст
+          saveContext(userId, {
+            lastInvoices: data.slice(0, 3).map(i => ({ 
+              id: i.id, 
+              number: i.invoice_number 
+            }))
+          });
+          
+          // Группируем по категориям если есть
+          const byCategory = data.reduce((acc, inv) => {
+            const cat = inv.category || 'Без категории';
+            if (!acc[cat]) acc[cat] = { total: 0, count: 0, items: [] };
+            acc[cat].total += inv.total_amount || 0;
+            acc[cat].count += 1;
+            if (inv.items) acc[cat].items.push(inv.items);
+            return acc;
+          }, {} as Record<string, { total: number; count: number; items: string[] }>);
+          
           result = formatInvoicesForAI(data);
+          
+          // Добавляем сводку по категориям
+          if (Object.keys(byCategory).length > 1) {
+            result += '\n\n📊 ПО КАТЕГОРИЯМ:\n';
+            Object.entries(byCategory).forEach(([cat, info]) => {
+              result += `${cat}: ${info.count} шт. на ${info.total.toLocaleString('ru-RU')} ₽\n`;
+            });
+          }
+          
           consoleLog('success', `Found ${data.length} invoices`);
         }
+        break;
+      }
+
+      case 'get_budget': {
+        // Найти проект сначала
+        let projectId = intent.filters?.project_id;
+        
+        if (!projectId || !isUUID(projectId)) {
+          const projectName = intent.filters?.project_name || intent.filters?.project_id || '';
+          consoleLog('info', 'Searching project for budget', { projectName });
+          
+          const { data: projects } = await getUserProjects(userId, { 
+            project_name: projectName,
+            limit: 1 
+          });
+          
+          if (!projects || projects.length === 0) {
+            result = `Проект "${projectName}" не найден.`;
+            await log.finish({ outputData: { error: 'Project not found' }, status: 'warning' });
+            return result;
+          }
+          
+          projectId = projects[0].id;
+        }
+        
+        const { data: budgetData, error } = await getProjectBudgetStats(projectId);
+        
+        if (error || !budgetData) {
+          result = `Ошибка получения статистики по бюджету: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error || 'Unknown' });
+          return result;
+        }
+        
+        const proj = budgetData.project;
+        result = `💰 БЮДЖЕТ ПРОЕКТА "${proj.project_name || proj.title}"\n\n`;
+        result += `Бюджет: ${budgetData.budget.toLocaleString('ru-RU')} ₽\n`;
+        result += `Потрачено: ${budgetData.spent.toLocaleString('ru-RU')} ₽\n`;
+        result += `Остаток: ${budgetData.remaining.toLocaleString('ru-RU')} ₽\n`;
+        result += `Прогресс: ${((budgetData.spent / budgetData.budget) * 100).toFixed(1)}%\n\n`;
+        
+        result += `📋 Счета: ${budgetData.total_invoices} шт.\n`;
+        result += `✅ Оплачено: ${budgetData.paid_invoices} шт.\n`;
+        result += `❌ Не оплачено: ${budgetData.unpaid_invoices} шт.\n\n`;
+        
+        if (budgetData.invoices_by_category.length > 0) {
+          result += '📊 ПО КАТЕГОРИЯМ:\n';
+          budgetData.invoices_by_category
+            .sort((a, b) => b.total - a.total)
+            .forEach(cat => {
+              result += `• ${cat.category}: ${cat.count} шт. на ${cat.total.toLocaleString('ru-RU')} ₽\n`;
+            });
+          result += '\n';
+        }
+        
+        if (budgetData.invoices_by_supplier.length > 0) {
+          result += '🏢 ПО ПОСТАВЩИКАМ:\n';
+          budgetData.invoices_by_supplier
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 5)
+            .forEach(sup => {
+              result += `• ${sup.supplier}: ${sup.count} шт. на ${sup.total.toLocaleString('ru-RU')} ₽\n`;
+            });
+        }
+        
+        if (proj.notes) {
+          result += `\n📝 Заметки:\n${proj.notes}\n`;
+        }
+        
+        rowsAffected = budgetData.total_invoices;
+        consoleLog('success', 'Budget stats retrieved', { projectId, spent: budgetData.spent });
         break;
       }
 

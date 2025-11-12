@@ -58,7 +58,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (currentUser) {
       loadMessages();
-      loadStats();
+      // loadStats(); // Отключено - таблица chat_usage_stats недоступна
     }
   }, [currentUser, agentType]); // Перезагружаем при смене агента
 
@@ -93,11 +93,11 @@ export default function ChatPage() {
         .from('chat_messages')
         .select('*')
         .eq('agent_type', agentType) // Фильтруем по типу агента
-        .order('created_at', { ascending: true })
-        .limit(100);
+        .order('created_at', { ascending: false }) // Сначала новые
+        .limit(20); // Загружаем только последние 20 сообщений
 
       if (error) throw error;
-      setMessages(data || []);
+      setMessages((data || []).reverse()); // Переворачиваем обратно для правильного порядка
     } catch (err) {
       console.error('Load messages error:', err);
     }
@@ -228,9 +228,9 @@ export default function ChatPage() {
 
       const data = await response.json();
       
-      // Обновляем сообщения и статистику
+      // Обновляем сообщения
       await loadMessages();
-      await loadStats();
+      // await loadStats(); // Отключено - таблица недоступна
     } catch (err) {
       console.error('Send message error:', err);
       alert('Ошибка отправки сообщения');
