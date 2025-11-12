@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight, Save } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
 import { ProjectFileManager } from '@/components/ProjectFileManager-v3';
 
@@ -136,6 +136,11 @@ export default function ProjectDetailPage() {
   const [notes, setNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesLastSaved, setNotesLastSaved] = useState<Date | null>(null);
+  
+  // Drag and drop для счетов
+  const [draggedInvoice, setDraggedInvoice] = useState<Invoice | null>(null);
+  const [showInvoiceRecognition, setShowInvoiceRecognition] = useState(false);
+  const [invoiceToRecognize, setInvoiceToRecognize] = useState<Invoice | null>(null);
 
   useEffect(() => {
     loadProjectData();
@@ -1372,8 +1377,11 @@ export default function ProjectDetailPage() {
                   {/* Строки счетов */}
                   {filteredInvoices.map(invoice => (
                     <div 
-                      key={invoice.id} 
-                      className={`px-3 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors ${
+                      key={invoice.id}
+                      draggable
+                      onDragStart={() => setDraggedInvoice(invoice)}
+                      onDragEnd={() => setDraggedInvoice(null)}
+                      className={`px-3 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors cursor-move ${
                         selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
@@ -1447,8 +1455,11 @@ export default function ProjectDetailPage() {
                   <div className="md:hidden divide-y">
                     {filteredInvoices.map(invoice => (
                       <div 
-                        key={invoice.id} 
-                        className={`p-4 transition-colors ${
+                        key={invoice.id}
+                        draggable
+                        onDragStart={() => setDraggedInvoice(invoice)}
+                        onDragEnd={() => setDraggedInvoice(null)}
+                        className={`p-4 transition-colors cursor-move ${
                           selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                         }`}
                       >
@@ -1531,10 +1542,127 @@ export default function ProjectDetailPage() {
         {/* Раздел Файлы проекта */}
         {project && (
           <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            {/* Drop-zone для распознавания счетов */}
+            {draggedInvoice && (
+              <div
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (draggedInvoice) {
+                    setInvoiceToRecognize(draggedInvoice);
+                    setShowInvoiceRecognition(true);
+                    setDraggedInvoice(null);
+                  }
+                }}
+                className="bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-white text-center border-b-4 border-blue-700"
+              >
+                <Upload className="w-12 h-12 mx-auto mb-2 animate-bounce" />
+                <p className="text-lg font-bold mb-1">Отпустите счет здесь для распознавания</p>
+                <p className="text-sm opacity-90">Счет откроется для редактирования и проверки данных</p>
+              </div>
+            )}
+            
             <ProjectFileManager 
               projectId={projectId} 
               invoices={invoices}
             />
+          </div>
+        )}
+
+        {/* Модальное окно для редактирования счета */}
+        {showInvoiceRecognition && invoiceToRecognize && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+              <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Редактирование счета {invoiceToRecognize.invoice_number}</h3>
+                <button
+                  onClick={() => {
+                    setShowInvoiceRecognition(false);
+                    setInvoiceToRecognize(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Номер счета</label>
+                    <input
+                      type="text"
+                      defaultValue={invoiceToRecognize.invoice_number}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Дата</label>
+                    <input
+                      type="date"
+                      defaultValue={invoiceToRecognize.invoice_date}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Сумма</label>
+                    <input
+                      type="number"
+                      defaultValue={invoiceToRecognize.total_amount || ''}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Поставщик</label>
+                    <div className="text-sm text-gray-600">
+                      {invoiceToRecognize.suppliers?.name || 'Не указан'}
+                    </div>
+                  </div>
+                  
+                  {invoiceToRecognize.file_url && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Файл счета</label>
+                      <a
+                        href={invoiceToRecognize.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Открыть файл
+                      </a>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex gap-3 mt-6 pt-6 border-t">
+                  <button
+                    onClick={() => {
+                      // Здесь можно добавить сохранение изменений
+                      setShowInvoiceRecognition(false);
+                      setInvoiceToRecognize(null);
+                    }}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <Save className="w-4 h-4 inline mr-2" />
+                    Сохранить
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInvoiceRecognition(false);
+                      setInvoiceToRecognize(null);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
