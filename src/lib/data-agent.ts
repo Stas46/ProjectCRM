@@ -309,35 +309,45 @@ async function fetchDataBasedOnIntent(
           }
         }
 
-        // 🚀 ИСПОЛЬЗУЕМ n8n для создания задачи (вместо прямого createTask)
-        const { createTaskViaN8n, formatN8nResponseForAI } = await import('./n8n-ai-actions');
-        
-        // Получаем telegram_id пользователя для уведомления
-        const { getUserTelegramId } = await import('./n8n-notifications');
-        const telegramId = await getUserTelegramId(userId);
+        // Создаём задачу напрямую в БД
+        const taskResult = await createTask(userId, {
+          title: intent.data.title,
+          description: intent.data.description,
+          priority: intent.data.priority as any,
+          status: intent.data.status || 'todo',
+          project_id: projectId,
+          due_date: dueDate,
+        });
 
-        const n8nResponse = await createTaskViaN8n(
-          userId,
-          {
-            title: intent.data.title,
-            description: intent.data.description,
-            priority: intent.data.priority as any,
-            status: intent.data.status || 'todo',
-            project_id: projectId,
-            due_date: dueDate,
-          },
-          telegramId || undefined
-        );
-
-        if (!n8nResponse.success) {
-          result = `Ошибка создания задачи: ${n8nResponse.message || n8nResponse.error}`;
-          await log.finish({ outputData: { error: n8nResponse.error }, status: 'error', errorMessage: n8nResponse.message });
+        if (!taskResult.data) {
+          result = `Ошибка создания задачи: ${taskResult.error}`;
+          await log.finish({ outputData: { error: taskResult.error }, status: 'error', errorMessage: 'Create failed' });
           return result;
         }
 
+        const newTask = taskResult.data;
+
+        // Отправляем уведомление через n8n
+        const { getUserTelegramId, notifyTaskCreated } = await import('./n8n-notifications');
+        const telegramId = await getUserTelegramId(userId);
+        
+        if (telegramId) {
+          await notifyTaskCreated(
+            {
+              id: newTask.id,
+              title: newTask.title,
+              priority: newTask.priority,
+              deadline: newTask.due_date,
+            },
+            telegramId,
+            userId
+          );
+          consoleLog('success', 'Telegram notification sent', { taskId: newTask.id });
+        }
+
         rowsAffected = 1;
-        result = formatN8nResponseForAI(n8nResponse);
-        consoleLog('success', 'Task created via n8n', { taskId: n8nResponse.task_id, notifications: n8nResponse.notifications_sent });
+        result = `✅ Создал задачу "${newTask.title}"${telegramId ? '\n📱 Уведомление отправлено' : ''}`;
+        consoleLog('success', 'Task created', { taskId: newTask.id });
         break;
       }
 
