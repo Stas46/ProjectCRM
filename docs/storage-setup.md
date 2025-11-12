@@ -89,6 +89,11 @@ USING (bucket_id = 'invoice-files');
 - `.xlsm` - Excel с макросами
 - MIME: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 
+### Word
+- `.docx` - Word 2007+ (рекомендуется)
+- `.doc` - Word 97-2003
+- MIME: `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+
 ### Изображения
 - `.jpg`, `.jpeg` - JPEG изображения
 - `.png` - PNG изображения

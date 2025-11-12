@@ -132,6 +132,10 @@ async function uploadFileToStorage(file: File): Promise<string | null> {
         contentType = 'application/vnd.ms-excel';
       } else if (fileExt === 'xlsm') {
         contentType = 'application/vnd.ms-excel.sheet.macroEnabled.12';
+      } else if (fileExt === 'docx') {
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      } else if (fileExt === 'doc') {
+        contentType = 'application/msword';
       } else if (fileExt === 'jpg' || fileExt === 'jpeg') {
         contentType = 'image/jpeg';
       } else if (fileExt === 'png') {
@@ -622,10 +626,13 @@ export async function POST(request: NextRequest) {
     let fileUrl: string | null = null;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
+    const isWord = fileExt === 'doc' || fileExt === 'docx';
+    const isOfficeFile = isExcel || isWord;
     
     try {
       fileUrl = await uploadFileToStorage(file);
-      logger.info('Файл загружен в Storage', { requestId, fileUrl, fileType: isExcel ? 'Excel' : 'PDF/Image' });
+      const fileType = isExcel ? 'Excel' : isWord ? 'Word' : 'PDF/Image';
+      logger.info('Файл загружен в Storage', { requestId, fileUrl, fileType });
       console.log(`✅ Файл ${file.name} успешно загружен: ${fileUrl}`);
     } catch (storageError) {
       logger.error('Ошибка загрузки в Storage', { requestId, error: String(storageError) });
@@ -644,13 +651,14 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Excel)
+    // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Office файлов)
     const buffer = Buffer.from(await file.arrayBuffer());
     let ocrText: string;
     
-    if (isExcel) {
-      // Для Excel используем office_to_text.py
-      console.log('📊 Извлечение текста из Excel...');
+    if (isOfficeFile) {
+      // Для Excel и Word используем office_to_text.py
+      const docType = isExcel ? 'Excel' : 'Word';
+      console.log(`� Извлечение текста из ${docType}...`);
       ocrText = await extractTextFromExcel(buffer, file.name);
     } else {
       // Для PDF/изображений используем OCR
