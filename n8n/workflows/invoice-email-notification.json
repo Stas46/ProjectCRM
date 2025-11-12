@@ -8,11 +8,11 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-invoice",
+      "id": "webhook-node",
       "name": "Invoice Created Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1.1,
-      "position": [240, 300],
+      "typeVersion": 1,
+      "position": [260, 300],
       "webhookId": "invoice-created"
     },
     {
@@ -26,7 +26,7 @@
           ]
         }
       },
-      "id": "filter-invoice",
+      "id": "if-node",
       "name": "Is Invoice Created?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
@@ -38,47 +38,47 @@
           "string": [
             {
               "name": "to",
-              "value": "admin@stella-spb.ru"
+              "value": "9924646@gmail.com"
             },
             {
               "name": "subject",
               "value": "=📄 Новый счет №{{$json.invoice.number}} от {{$json.invoice.supplier_name}}"
             },
             {
-              "name": "html",
-              "value": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }\n    .content { padding: 20px; background: #f9f9f9; }\n    .info-block { margin: 15px 0; padding: 15px; background: white; border-left: 4px solid #4CAF50; border-radius: 3px; }\n    .label { font-weight: bold; color: #666; font-size: 14px; }\n    .value { color: #333; font-size: 18px; margin-top: 5px; }\n    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }\n    .button { display: inline-block; padding: 12px 30px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>📄 Новый счет распознан</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"info-block\">\n        <div class=\"label\">Номер счета</div>\n        <div class=\"value\">{{$json.invoice.number}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Поставщик</div>\n        <div class=\"value\">{{$json.invoice.supplier_name}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">ИНН поставщика</div>\n        <div class=\"value\">{{$json.invoice.supplier_inn}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Сумма</div>\n        <div class=\"value\" style=\"color: #4CAF50; font-size: 24px; font-weight: bold;\">{{$json.invoice.total_amount}} ₽</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Дата счета</div>\n        <div class=\"value\">{{$json.invoice.date}}</div>\n      </div>\n      <div style=\"text-align: center; margin-top: 30px;\">\n        <a href=\"https://alu.stella-spb.ru/invoices\" class=\"button\">Открыть в CRM</a>\n      </div>\n    </div>\n    <div class=\"footer\">\n      <p>Это автоматическое уведомление из CRM системы</p>\n      <p>Glazing CRM | alu.stella-spb.ru</p>\n      <p style=\"font-size: 10px; color: #999;\">ID: {{$json.invoice.id}}</p>\n    </div>\n  </div>\n</body>\n</html>"
+              "name": "message",
+              "value": "=Создан новый счет на сумму {{$json.invoice.total_amount}} руб."
             },
             {
-              "name": "message",
-              "value": "=Новый счет распознан\n\nНомер счета: {{$json.invoice.number}}\nПоставщик: {{$json.invoice.supplier_name}}\nИНН: {{$json.invoice.supplier_inn}}\nСумма: {{$json.invoice.total_amount}} ₽\nДата: {{$json.invoice.date}}\n\nID счета: {{$json.invoice.id}}\n\n---\nGlazing CRM | alu.stella-spb.ru"
+              "name": "html",
+              "value": "=<h2>Новый счет создан</h2><p><strong>Номер:</strong> {{$json.invoice.number}}</p><p><strong>Поставщик:</strong> {{$json.invoice.supplier_name}}</p><p><strong>Сумма:</strong> {{$json.invoice.total_amount}} руб.</p><p><strong>Дата:</strong> {{$json.invoice.date}}</p>"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "id": "set-email-data",
+      "id": "set-data-node",
       "name": "Prepare Email Data",
       "type": "n8n-nodes-base.set",
-      "typeVersion": 2,
-      "position": [680, 200]
+      "typeVersion": 1,
+      "position": [660, 200]
     },
     {
       "parameters": {
-        "fromEmail": "noreply@stella-spb.ru",
+        "fromEmail": "info@stella-spb.ru",
         "toEmail": "={{$json.to}}",
         "subject": "={{$json.subject}}",
-        "emailFormat": "both",
         "text": "={{$json.message}}",
         "html": "={{$json.html}}",
         "options": {}
       },
-      "id": "send-email",
+      "id": "email-node",
       "name": "Send Email via Yandex",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2,
-      "position": [900, 200],
+      "position": [860, 200],
       "credentials": {
         "smtp": {
-          "id": "yandex_smtp",
+          "id": "1",
           "name": "Yandex SMTP"
         }
       }
@@ -86,27 +86,28 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { success: true, message: 'Email notification sent', invoice_id: $json.invoice.id, timestamp: $now } }}"
+        "responseBody": "={\"success\": true, \"message\": \"Email sent\"}",
+        "options": {}
       },
-      "id": "response-success",
+      "id": "success-response-node",
       "name": "Success Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1120, 200]
+      "position": [1060, 200]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { success: false, message: 'Not an invoice event', type: $json.type } }}",
+        "responseBody": "={\"success\": false, \"message\": \"Not an invoice event\"}",
         "options": {
           "responseCode": 400
         }
       },
-      "id": "response-skip",
+      "id": "skip-response-node",
       "name": "Skip Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [680, 400]
+      "position": [660, 400]
     }
   ],
   "connections": {
@@ -162,13 +163,7 @@
       ]
     }
   },
-  "pinData": {},
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "staticData": null,
-  "tags": [],
-  "triggerCount": 1,
-  "updatedAt": "2025-11-12T00:00:00.000Z",
-  "versionId": "1"
+  "active": true,
+  "settings": {},
+  "tags": []
 }
