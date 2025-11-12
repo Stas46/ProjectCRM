@@ -272,6 +272,28 @@ export async function createTask(
     }
 
     console.log('✅ Task created:', data);
+    
+    // Отправляем уведомление через n8n (асинхронно, не блокируем ответ)
+    if (data) {
+      import('./n8n-notifications').then(({ notifyTaskCreated, getUserTelegramId }) => {
+        getUserTelegramId(userId).then(telegramId => {
+          if (telegramId) {
+            notifyTaskCreated(
+              {
+                id: data.id,
+                title: data.title,
+                priority: data.priority,
+                quadrant: `${data.priority}-${data.status}`,
+                deadline: data.due_date,
+              },
+              telegramId,
+              userId
+            ).catch(err => console.error('⚠️ n8n notification error:', err));
+          }
+        });
+      });
+    }
+    
     return { data: data as Task, error: null };
   } catch (error: any) {
     console.error('❌ Exception in createTask:', error);
