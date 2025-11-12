@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
+import { ProjectFileManager } from '@/components/ProjectFileManager';
 
 interface Project {
   id: string;
@@ -1524,6 +1525,13 @@ export default function ProjectDetailPage() {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Раздел Файлы проекта */}
+        {project && (
+          <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+            <ProjectFileManager projectId={projectId} />
           </div>
         )}
       </div>
