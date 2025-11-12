@@ -734,6 +734,28 @@ export async function POST(request: NextRequest) {
     
     console.log(`✅ [${requestId}] Счет создан: ${invoice.id}`);
     
+    // Отправка уведомления через n8n (асинхронно, не блокируем ответ)
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
+    if (n8nWebhookUrl && parsed) {
+      fetch(n8nWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'invoice_created',
+          invoice: {
+            id: invoice.id,
+            number: parsed.invoice_number,
+            date: parsed.invoice_date,
+            total_amount: parsed.total_amount,
+            supplier_name: parsed.supplier_name,
+            supplier_inn: parsed.supplier_inn,
+          },
+          project_id: projectId,
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch(err => console.error('⚠️ n8n webhook error:', err));
+    }
+    
     return NextResponse.json({
       success: true,
       invoice,
