@@ -409,6 +409,7 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                   href={file.public_url} 
                   target="_blank" 
                   rel="noopener noreferrer"
+                  draggable="false"
                   className="text-sm flex-1 truncate hover:text-blue-600"
                   onClick={(e) => e.stopPropagation()}
                 >
