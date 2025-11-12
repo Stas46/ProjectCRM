@@ -1,0 +1,237 @@
+{
+  "name": "AI Actions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-action",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ai-webhook",
+      "name": "AI Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ai-action"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.body.action}}",
+              "operation": "equals",
+              "value2": "create_task"
+            }
+          ]
+        }
+      },
+      "id": "switch-action",
+      "name": "What Action?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "tasks",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "title": "={{$json.body.data.title}}",
+            "description": "={{$json.body.data.description}}",
+            "priority": "={{$json.body.data.priority || 2}}",
+            "status": "={{$json.body.data.status || 'todo'}}",
+            "due_date": "={{$json.body.data.due_date}}",
+            "project_id": "={{$json.body.data.project_id}}",
+            "assignee_id": "={{$json.body.user_id}}"
+          }
+        },
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "id": "create-task-db",
+      "name": "Create Task in Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-credentials",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const task = $input.all()[0].json;\nconst bodyData = $input.all()[0].json.body || {};\nconst priority = task.priority === 1 ? '🔥 Срочно' : task.priority === 2 ? '⚡ Важно' : '📋 Обычная';\n\nreturn {\n  json: {\n    chat_id: bodyData.telegram_id,\n    message: `🆕 *Новая задача создана*\\n\\n📝 ${task.title}\\n${priority}\\n⏰ Дедлайн: ${task.due_date || 'не указан'}\\n\\n_Создано через AI_`,\n    parse_mode: 'Markdown',\n    task_id: task.id,\n    task_title: task.title\n  }\n};"
+      },
+      "id": "format-notification",
+      "name": "Format Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.chat_id}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "has-telegram",
+      "name": "Has Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "POST",
+        "url": "=https://api.telegram.org/botTELEGRAM_BOT_TOKEN_REMOVED/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": $json.chat_id,\n  \"text\": $json.message,\n  \"parse_mode\": $json.parse_mode\n}",
+        "options": {}
+      },
+      "id": "send-telegram",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"action\": \"create_task\",\n  \"task_id\": \"{{$json.task_id}}\",\n  \"task_title\": \"{{$json.task_title}}\",\n  \"notifications_sent\": [\"telegram\"],\n  \"message\": \"Задача создана и уведомление отправлено\"\n}",
+        "options": {}
+      },
+      "id": "success-with-telegram",
+      "name": "Success + Telegram",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"action\": \"create_task\",\n  \"task_id\": \"{{$json.task_id}}\",\n  \"task_title\": \"{{$json.task_title}}\",\n  \"notifications_sent\": [],\n  \"message\": \"Задача создана (уведомление не отправлено - нет Telegram ID)\"\n}",
+        "options": {}
+      },
+      "id": "success-no-telegram",
+      "name": "Success (no Telegram)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": false, \"error\": \"Unknown action\", \"message\": \"Action '{{$json.body.action}}' not supported\"}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "unknown-action",
+      "name": "Unknown Action",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 400]
+    }
+  ],
+  "connections": {
+    "AI Action Webhook": {
+      "main": [
+        [
+          {
+            "node": "What Action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What Action?": {
+      "main": [
+        [
+          {
+            "node": "Create Task in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Task in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Format Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Notification": {
+      "main": [
+        [
+          {
+            "node": "Has Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Success (no Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "Success + Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "tags": []
+}

@@ -309,29 +309,35 @@ async function fetchDataBasedOnIntent(
           }
         }
 
-        const { data, error } = await createTask(userId, {
-          title: intent.data.title,
-          description: intent.data.description,
-          priority: intent.data.priority as any,
-          status: intent.data.status,
-          project_id: projectId,
-          due_date: dueDate,
-        });
+        // 🚀 ИСПОЛЬЗУЕМ n8n для создания задачи (вместо прямого createTask)
+        const { createTaskViaN8n, formatN8nResponseForAI } = await import('./n8n-ai-actions');
+        
+        // Получаем telegram_id пользователя для уведомления
+        const { getUserTelegramId } = await import('./n8n-notifications');
+        const telegramId = await getUserTelegramId(userId);
 
-        if (error) {
-          result = `Ошибка создания задачи: ${error}`;
-          await log.finish({ outputData: { error }, status: 'error', errorMessage: error });
+        const n8nResponse = await createTaskViaN8n(
+          userId,
+          {
+            title: intent.data.title,
+            description: intent.data.description,
+            priority: intent.data.priority as any,
+            status: intent.data.status || 'todo',
+            project_id: projectId,
+            due_date: dueDate,
+          },
+          telegramId || undefined
+        );
+
+        if (!n8nResponse.success) {
+          result = `Ошибка создания задачи: ${n8nResponse.message || n8nResponse.error}`;
+          await log.finish({ outputData: { error: n8nResponse.error }, status: 'error', errorMessage: n8nResponse.message });
           return result;
         }
 
         rowsAffected = 1;
-        const quadrantMap: any = {1: 'UV (важно+срочно)', 2: 'V (важно)', 3: 'U (срочно)', 4: 'O (обычная)'};
-        const quadrant = data?.priority === 1 && data?.status === 'in_progress' ? 1 
-          : data?.priority === 1 && data?.status === 'todo' ? 2
-          : data?.priority === 2 && data?.status === 'in_progress' ? 3 
-          : 4;
-        result = `✅ Задача создана:\n\nНазвание: ${data?.title}\nКвадрант: ${quadrantMap[quadrant]}${data?.project_id ? `\nПроект: привязан` : ''}${data?.due_date ? `\nСрок: ${new Date(data.due_date).toLocaleDateString('ru-RU')}` : ''}`;
-        consoleLog('success', 'Task created', { taskId: data?.id, projectId: data?.project_id });
+        result = formatN8nResponseForAI(n8nResponse);
+        consoleLog('success', 'Task created via n8n', { taskId: n8nResponse.task_id, notifications: n8nResponse.notifications_sent });
         break;
       }
 

@@ -6,7 +6,7 @@
 **Файлы:**
 - `src/app/api/telegram/webhook/route.ts` - webhook для приёма сообщений
 - `src/lib/telegram-helper.ts` - вспомогательные функции
-- Token: `TELEGRAM_BOT_TOKEN_REMOVED`
+- Token: хранится в переменной окружения `TELEGRAM_BOT_TOKEN`
 
 **Функционал:**
 - 3 режима работы: AI, CRM, Hybrid
