@@ -168,8 +168,9 @@ export async function getUserProjects(
       query = query.eq('priority', filters.priority);
     }
     // Частичный поиск по названию проекта (регистронезависимый)
+    // Временно используем title, пока project_name не добавлена в БД
     if (filters?.project_name) {
-      query = query.ilike('project_name', `%${filters.project_name}%`);
+      query = query.or(`title.ilike.%${filters.project_name}%,project_name.ilike.%${filters.project_name}%`);
     }
     if (filters?.limit) {
       query = query.limit(filters.limit);

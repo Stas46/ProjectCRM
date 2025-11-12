@@ -252,8 +252,17 @@ async function analyzeUserIntent(
       return result as DataAgentRequest;
     }
 
+    // Убираем markdown-обёртку если есть (```json ... ```)
+    let cleanContent = content;
+    if (content.startsWith('```')) {
+      const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (match) {
+        cleanContent = match[1].trim();
+      }
+    }
+
     // Парсим JSON ответ
-    const parsed: DataAgentRequest = JSON.parse(content);
+    const parsed: DataAgentRequest = JSON.parse(cleanContent);
     consoleLog('success', 'Data Agent intent recognized', { 
       action: parsed.action, 
       reasoning: parsed.reasoning 
