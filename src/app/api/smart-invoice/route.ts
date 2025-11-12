@@ -535,7 +535,7 @@ async function parseInvoiceWithPython(text: string): Promise<ParsedInvoiceData> 
     const tempTextFile = path.join(process.cwd(), 'temp', `ocr_${Date.now()}.txt`);
     await fs.writeFile(tempTextFile, text, 'utf-8');
     
-    const command = `python "${pythonScript}" --file "${tempTextFile}" --output-format json`;
+    const command = `python3 "${pythonScript}" --file "${tempTextFile}" --output-format json`;
     
     const { stdout, stderr } = await execAsync(command, {
       encoding: 'utf-8',

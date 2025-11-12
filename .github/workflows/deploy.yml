@@ -31,6 +31,10 @@ jobs:
             git fetch origin master
             git reset --hard origin/master
             git clean -fd
+            
+            echo "📦 Installing Python dependencies..."
+            pip3 install -r requirements.txt
+            
             npm ci
             NEXT_LINT=false npm run build
             pm2 restart crm-glazing
