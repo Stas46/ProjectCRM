@@ -231,7 +231,9 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
       );
     }
 
-    // Показываем файлы выбранной папки
+    // Показываем папки и файлы вместе (как в проводнике Windows)
+    const hasContent = folders.length > 0 || files.length > 0 || invoices.length > 0;
+    
     return (
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -239,15 +241,47 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
         onDrop={(e) => handleDrop(e, selectedFolder || undefined)}
         className={`space-y-1 min-h-[400px] ${isDragging ? 'bg-blue-50' : ''}`}
       >
-        {files.length === 0 ? (
+        {!hasContent ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Upload className="w-12 h-12 text-gray-300 mb-2" />
             <p className="text-sm text-gray-500">Перетащите файлы сюда</p>
             <p className="text-xs text-gray-400 mt-1">или используйте кнопку загрузки</p>
           </div>
         ) : (
-          files.map((file) => (
-            <div
+          <>
+            {/* Виртуальная папка Счета (только на верхнем уровне) */}
+            {!currentFolder && invoices.length > 0 && (
+              <div
+                onClick={() => setSelectedFolder('__invoices__')}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer group"
+              >
+                <Receipt className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                <span className="text-sm font-medium flex-1">Счета</span>
+                <span className="text-xs text-gray-400">{invoices.length}</span>
+              </div>
+            )}
+
+            {/* Папки сверху */}
+            {folders.map((folder) => (
+              <div
+                key={folder.path}
+                onDoubleClick={() => {
+                  setSelectedFolder(folder.path);
+                  setCurrentFolder(folder.path);
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => { e.stopPropagation(); handleDrop(e, folder.path); }}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer group"
+              >
+                <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+                <span className="text-sm font-medium flex-1 truncate">{folder.name}</span>
+                <span className="text-xs text-gray-400">{folder.file_count}</span>
+              </div>
+            ))}
+            
+            {/* Файлы снизу */}
+            {files.map((file) => (
+              <div
               key={file.id}
               draggable
               onDragStart={() => setDraggedFile(file.id)}
@@ -275,7 +309,8 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 <Trash2 className="w-3.5 h-3.5 text-red-500" />
               </button>
             </div>
-          ))
+            ))}
+          </>
         )}
       </div>
     );
@@ -346,65 +381,40 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
         </div>
       )}
 
-      {/* Three Column Layout */}
-      <div className="flex" style={{ height: '500px' }}>
-        {/* Left Panel - Folders */}
-        <div 
-          className="w-64 border-r overflow-y-auto bg-gray-50/50"
-          onDragOver={(e) => e.preventDefault()}
-        >
-          <div className="p-2 space-y-0.5">
-            {/* Root folder */}
-            <div
+      {/* Single Panel Layout - как в проводнике */}
+      <div className="p-4">
+        {/* Breadcrumbs */}
+        {currentFolder && (
+          <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
+            <button 
               onClick={() => {
-                setSelectedFolder(null);
                 setCurrentFolder(undefined);
+                setSelectedFolder(null);
               }}
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              onDrop={(e) => { e.stopPropagation(); handleDrop(e, undefined); }}
-              className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
-                selectedFolder === null ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
-              }`}
+              className="hover:text-blue-600"
             >
-              <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-              <span className="text-sm font-medium">Все файлы</span>
-            </div>
-
-            {/* Invoices virtual folder */}
-            <div
-              onClick={() => setSelectedFolder('__invoices__')}
-              className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
-                selectedFolder === '__invoices__' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
-              }`}
-            >
-              <Receipt className="w-4 h-4 text-blue-500 flex-shrink-0" />
-              <span className="text-sm font-medium">Счета ({invoices.length})</span>
-            </div>
-
-            {/* Real folders */}
-            {folders.map((folder) => (
-              <div
-                key={folder.path}
-                onClick={() => {
-                  setSelectedFolder(folder.path);
-                  setCurrentFolder(folder.path);
-                }}
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={(e) => { e.stopPropagation(); handleDrop(e, folder.path); }}
-                className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
-                  selectedFolder === folder.path ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
-                }`}
-              >
-                <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-                <span className="text-sm flex-1 truncate">{folder.name}</span>
-                <span className="text-xs text-gray-400">{folder.file_count}</span>
+              Все файлы
+            </button>
+            {currentFolder.split('/').map((part, idx, arr) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span>/</span>
+                <button 
+                  onClick={() => {
+                    const newPath = arr.slice(0, idx + 1).join('/');
+                    setCurrentFolder(newPath);
+                    setSelectedFolder(newPath);
+                  }}
+                  className={idx === arr.length - 1 ? 'font-medium' : 'hover:text-blue-600'}
+                >
+                  {part}
+                </button>
               </div>
             ))}
           </div>
-        </div>
+        )}
 
-        {/* Right Panel - Files */}
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* Content */}
+        <div className="overflow-y-auto" style={{ maxHeight: '500px' }}>
           {renderContent()}
         </div>
       </div>

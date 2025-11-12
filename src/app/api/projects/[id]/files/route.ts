@@ -103,11 +103,39 @@ export async function GET(
     // Добавляем папки с файлами
     foldersData?.forEach(f => f.folder && folderSet.add(f.folder));
 
-    const folders = Array.from(folderSet).map(folderPath => ({
-      name: folderPath.split('/').pop() || folderPath,
-      path: folderPath,
-      file_count: files?.filter(f => f.folder === folderPath).length || 0
-    }));
+    // Фильтруем папки по текущему уровню
+    // Если folder не указана - показываем папки верхнего уровня (без слэшей)
+    // Если folder указана - показываем подпапки этой папки
+    let filteredFolders = Array.from(folderSet);
+    
+    if (!folder) {
+      // Показываем только папки верхнего уровня (без "/" в пути)
+      filteredFolders = filteredFolders.filter(f => !f.includes('/'));
+    } else {
+      // Показываем подпапки текущей папки
+      const prefix = folder + '/';
+      filteredFolders = filteredFolders
+        .filter(f => f.startsWith(prefix))
+        .filter(f => {
+          // Только прямые подпапки (не вложенные глубже)
+          const rest = f.substring(prefix.length);
+          return !rest.includes('/');
+        });
+    }
+
+    const folders = filteredFolders.map(folderPath => {
+      // Считаем файлы в этой папке и всех подпапках
+      const allFiles = files || [];
+      const fileCount = allFiles.filter(f => 
+        f.folder === folderPath || (f.folder && f.folder.startsWith(folderPath + '/'))
+      ).length;
+      
+      return {
+        name: folderPath.split('/').pop() || folderPath,
+        path: folderPath,
+        file_count: fileCount
+      };
+    });
 
     console.log(`📁 Найдено папок: ${folders.length}`, folders);
 
