@@ -369,11 +369,14 @@ export async function PATCH(
 
     // Формируем новый путь в Storage
     const timestamp = Date.now();
-    const fileName = file.file_name;
+    const fileExt = file.file_name.split('.').pop()?.toLowerCase();
+    const baseName = file.file_name.substring(0, file.file_name.lastIndexOf('.')) || file.file_name;
+    const sanitizedName = transliterate(baseName).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const finalFileName = `${timestamp}_${sanitizedName}.${fileExt}`;
     const newFolderPath = target_folder ? `${target_folder}` : '';
     const newFilePath = newFolderPath 
-      ? `projects/${projectId}/${newFolderPath}/${timestamp}_${fileName}`
-      : `projects/${projectId}/${timestamp}_${fileName}`;
+      ? `projects/${projectId}/${newFolderPath}/${finalFileName}`
+      : `projects/${projectId}/${finalFileName}`;
 
     console.log(`🗂️ Новый путь: ${newFilePath}`);
 
