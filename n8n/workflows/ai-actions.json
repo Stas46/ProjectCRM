@@ -98,7 +98,7 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "requestMethod": "POST",
-        "url": "=https://api.telegram.org/botTELEGRAM_BOT_TOKEN_REMOVED/sendMessage",
+        "url": "=https://api.telegram.org/bot{{$credentials.telegramBotToken}}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"chat_id\": $json.chat_id,\n  \"text\": $json.message,\n  \"parse_mode\": $json.parse_mode\n}",
