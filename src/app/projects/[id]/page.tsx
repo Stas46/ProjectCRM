@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
-import { ProjectFileManager } from '@/components/ProjectFileManager-v2';
+import { ProjectFileManager } from '@/components/ProjectFileManager-v3';
 
 interface Project {
   id: string;

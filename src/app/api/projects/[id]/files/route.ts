@@ -81,17 +81,32 @@ export async function GET(
 
     console.log(`✅ Найдено файлов: ${files?.length || 0}`);
 
-    // Получаем список папок
+    // Получаем список папок из таблицы project_folders (пустые папки) 
+    // и из файлов (папки с файлами)
+    const { data: emptyFolders } = await supabase
+      .from('project_folders')
+      .select('folder_name, folder_path')
+      .eq('project_id', projectId);
+
     const { data: foldersData } = await supabase
       .from('project_files')
       .select('folder')
       .eq('project_id', projectId)
       .not('folder', 'is', null);
 
-    const folders = [...new Set(foldersData?.map(f => f.folder) || [])].map(folderName => ({
-      name: folderName,
-      path: folderName,
-      file_count: files?.filter(f => f.folder === folderName).length || 0
+    // Объединяем папки из обеих источников
+    const folderSet = new Set<string>();
+    
+    // Добавляем пустые папки
+    emptyFolders?.forEach(f => folderSet.add(f.folder_path));
+    
+    // Добавляем папки с файлами
+    foldersData?.forEach(f => f.folder && folderSet.add(f.folder));
+
+    const folders = Array.from(folderSet).map(folderPath => ({
+      name: folderPath.split('/').pop() || folderPath,
+      path: folderPath,
+      file_count: files?.filter(f => f.folder === folderPath).length || 0
     }));
 
     console.log(`📁 Найдено папок: ${folders.length}`, folders);
