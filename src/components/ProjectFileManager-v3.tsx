@@ -103,13 +103,11 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
   const handleDrop = async (e: React.DragEvent, targetFolder?: string) => {
     e.preventDefault();
-    console.log('📦 handleDrop вызван:', { targetFolder, draggedFile, currentFolder });
     setIsDragging(false);
     
     // Если перетаскиваем внешний файл
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      console.log('📁 Внешний файл:', file.name, 'в папку:', targetFolder);
       setUploading(true);
       const result = await uploadFile(file, targetFolder, userId);
       setUploading(false);
@@ -121,12 +119,9 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
     // Если перетаскиваем файл из списка
     if (draggedFile) {
-      console.log('🔄 Перемещение файла из списка:', draggedFile, 'в:', targetFolder);
       setUploading(true);
       await moveFile(draggedFile, targetFolder);
       setUploading(false);
-    } else {
-      console.log('⚠️ draggedFile не установлен');
     }
     setDraggedFile(null);
   };
@@ -173,7 +168,6 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
   // Touch события для мобильных устройств
   const handleTouchStart = (e: React.TouchEvent, fileId: string) => {
     const touch = e.touches[0];
-    console.log('👆 TouchStart:', fileId, 'at', touch.clientX, touch.clientY);
     setTouchStart({ fileId, x: touch.clientX, y: touch.clientY });
     setDraggedFile(fileId);
   };
@@ -187,7 +181,6 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
     if (element && element.hasAttribute('data-folder-path')) {
       const folderPath = element.getAttribute('data-folder-path');
-      console.log('📱 TouchMove над папкой:', folderPath);
       setDragOverFolder(folderPath);
     } else {
       setDragOverFolder(null);
@@ -195,19 +188,13 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
   };
 
   const handleTouchEnd = async (e: React.TouchEvent) => {
-    if (!touchStart || !draggedFile) {
-      console.log('⚠️ TouchEnd без touchStart или draggedFile');
-      return;
-    }
+    if (!touchStart || !draggedFile) return;
     
     const touch = e.changedTouches[0];
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
     
-    console.log('👆 TouchEnd:', draggedFile, 'at', touch.clientX, touch.clientY);
-    
     if (element && element.hasAttribute('data-folder-path')) {
       const targetFolder = element.getAttribute('data-folder-path');
-      console.log('🎯 Touch drop в папку:', targetFolder);
       if (targetFolder && targetFolder !== currentFolder) {
         setUploading(true);
         await moveFile(draggedFile, targetFolder);
@@ -311,20 +298,9 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
     
     return (
       <div
-        onDragOver={(e) => { 
-          e.preventDefault(); 
-          console.log('🎨 Основная область onDragOver');
-          setIsDragging(true); 
-        }}
-        onDragLeave={(e) => { 
-          e.preventDefault(); 
-          console.log('👋 Основная область onDragLeave');
-          setIsDragging(false); 
-        }}
-        onDrop={(e) => {
-          console.log('📍 Основная область onDrop');
-          handleDrop(e, selectedFolder || undefined);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+        onDrop={(e) => handleDrop(e, selectedFolder || undefined)}
         className={`space-y-1 min-h-[400px] ${isDragging ? 'bg-blue-50' : ''}`}
       >
         {/* Drop-зона для перемещения в корень (показывается только в подпапках при перетаскивании) */}
@@ -333,18 +309,15 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             onDragOver={(e) => { 
               e.preventDefault(); 
               e.stopPropagation(); 
-              console.log('🏠 Drop-зона корня onDragOver');
               setDragOverFolder('__root__');
             }}
             onDragLeave={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('👋 Drop-зона корня onDragLeave');
               setDragOverFolder(null);
             }}
             onDrop={(e) => { 
               e.stopPropagation(); 
-              console.log('🎯 Drop-зона корня onDrop');
               setDragOverFolder(null);
               handleDrop(e, undefined); // undefined = корень
             }}
@@ -389,25 +362,21 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 key={folder.path}
                 data-folder-path={folder.path}
                 onClick={() => {
-                  console.log('📂 Клик на папку:', folder.path);
                   setSelectedFolder(folder.path);
                   setCurrentFolder(folder.path);
                 }}
                 onDragOver={(e) => { 
                   e.preventDefault(); 
                   e.stopPropagation(); 
-                  console.log('📁 Папка onDragOver:', folder.path);
                   setDragOverFolder(folder.path);
                 }}
                 onDragLeave={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log('👋 Папка onDragLeave:', folder.path);
                   setDragOverFolder(null);
                 }}
                 onDrop={(e) => { 
                   e.stopPropagation(); 
-                  console.log('🎯 Папка onDrop:', folder.path);
                   setDragOverFolder(null);
                   handleDrop(e, folder.path); 
                 }}
@@ -428,14 +397,8 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
               <div
                 key={file.id}
                 draggable
-                onDragStart={() => {
-                  console.log('🎯 DragStart файл:', file.id, file.file_name);
-                  setDraggedFile(file.id);
-                }}
-                onDragEnd={() => {
-                  console.log('🏁 DragEnd файл:', file.id);
-                  setDraggedFile(null);
-                }}
+                onDragStart={() => setDraggedFile(file.id)}
+                onDragEnd={() => setDraggedFile(null)}
                 onTouchStart={(e) => handleTouchStart(e, file.id)}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
@@ -542,25 +505,21 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
             <button 
               data-folder-path="__root__"
               onClick={() => {
-                console.log('🏠 Breadcrumb: клик на Корень');
                 setCurrentFolder(undefined);
                 setSelectedFolder(null);
               }}
               onDragOver={(e) => { 
                 e.preventDefault(); 
                 e.stopPropagation(); 
-                console.log('🏠 Breadcrumb Корень: onDragOver');
                 setDragOverFolder('__root__');
               }}
               onDragLeave={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('👋 Breadcrumb Корень: onDragLeave');
                 setDragOverFolder(null);
               }}
               onDrop={(e) => { 
                 e.stopPropagation(); 
-                console.log('🎯 Breadcrumb Корень: onDrop');
                 setDragOverFolder(null);
                 handleDrop(e, undefined); // undefined = корень
               }}
@@ -581,7 +540,6 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                   data-folder-path={arr.slice(0, idx + 1).join('/')}
                   onClick={() => {
                     const newPath = arr.slice(0, idx + 1).join('/');
-                    console.log('📂 Breadcrumb: клик на', newPath);
                     setCurrentFolder(newPath);
                     setSelectedFolder(newPath);
                   }}
@@ -589,20 +547,16 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                     e.preventDefault(); 
                     e.stopPropagation();
                     const folderPath = arr.slice(0, idx + 1).join('/');
-                    console.log('📁 Breadcrumb onDragOver:', folderPath);
                     setDragOverFolder(folderPath);
                   }}
                   onDragLeave={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const folderPath = arr.slice(0, idx + 1).join('/');
-                    console.log('👋 Breadcrumb onDragLeave:', folderPath);
                     setDragOverFolder(null);
                   }}
                   onDrop={(e) => { 
                     e.stopPropagation(); 
                     const folderPath = arr.slice(0, idx + 1).join('/');
-                    console.log('🎯 Breadcrumb onDrop:', folderPath);
                     setDragOverFolder(null);
                     handleDrop(e, folderPath);
                   }}
