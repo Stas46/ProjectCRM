@@ -292,6 +292,37 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
         onDrop={(e) => handleDrop(e, selectedFolder || undefined)}
         className={`space-y-1 min-h-[400px] ${isDragging ? 'bg-blue-50' : ''}`}
       >
+        {/* Drop-зона для перемещения в корень (показывается только в подпапках при перетаскивании) */}
+        {currentFolder && draggedFile && (
+          <div
+            onDragOver={(e) => { 
+              e.preventDefault(); 
+              e.stopPropagation(); 
+              setDragOverFolder('__root__');
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOverFolder(null);
+            }}
+            onDrop={(e) => { 
+              e.stopPropagation(); 
+              setDragOverFolder(null);
+              handleDrop(e, undefined); // undefined = корень
+            }}
+            className={`mb-3 p-4 border-2 border-dashed rounded-lg text-center transition-all ${
+              dragOverFolder === '__root__'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50'
+            }`}
+          >
+            <Upload className={`w-8 h-8 mx-auto mb-2 ${dragOverFolder === '__root__' ? 'text-blue-600' : 'text-gray-400'}`} />
+            <p className={`text-sm font-medium ${dragOverFolder === '__root__' ? 'text-blue-700' : 'text-gray-600'}`}>
+              {dragOverFolder === '__root__' ? 'Отпустите для перемещения в корень' : '📁 Переместить в корневую папку'}
+            </p>
+          </div>
+        )}
+        
         {!hasContent ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Upload className="w-12 h-12 text-gray-300 mb-2" />
@@ -465,9 +496,28 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
                 setCurrentFolder(undefined);
                 setSelectedFolder(null);
               }}
-              className="hover:text-blue-600"
+              onDragOver={(e) => { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                setDragOverFolder('__root__');
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverFolder(null);
+              }}
+              onDrop={(e) => { 
+                e.stopPropagation(); 
+                setDragOverFolder(null);
+                handleDrop(e, undefined); // undefined = корень
+              }}
+              className={`px-2 py-1 rounded transition-colors ${
+                dragOverFolder === '__root__'
+                  ? 'bg-blue-100 text-blue-700 font-semibold border-2 border-blue-400'
+                  : 'hover:text-blue-600 hover:bg-blue-50'
+              }`}
             >
-              Все файлы
+              📁 Все файлы (корень)
             </button>
             {currentFolder.split('/').map((part, idx, arr) => (
               <div key={idx} className="flex items-center gap-2">
