@@ -44,20 +44,25 @@
     },
     {
       "parameters": {
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "requestMethod": "POST",
-        "url": "=https://api.telegram.org/bot{{$credentials.telegramBotToken}}/sendMessage",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"chat_id\": $json.chat_id,\n  \"text\": $json.message,\n  \"parse_mode\": $json.parse_mode\n}",
-        "options": {}
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{$json.chat_id}}",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "={{$json.parse_mode}}"
+        }
       },
       "id": "send-telegram",
       "name": "Send Telegram Message",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [850, 200]
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
     },
     {
       "parameters": {
