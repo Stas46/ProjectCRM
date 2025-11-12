@@ -334,3 +334,117 @@ export async function DELETE(
     }, { status: 500 });
   }
 }
+
+// ============================================
+// PATCH - Переместить файл в другую папку
+// ============================================
+export async function PATCH(
+  request: NextRequest,
+  context: RouteContext
+) {
+  try {
+    const { id: projectId } = await context.params;
+    const { file_id, target_folder } = await request.json();
+
+    console.log(`🔄 PATCH /api/projects/${projectId}/files - перемещение файла ${file_id} в папку: ${target_folder || 'root'}`);
+
+    if (!file_id) {
+      return NextResponse.json({ error: 'ID файла не указан' }, { status: 400 });
+    }
+
+    // Получаем информацию о файле
+    const { data: file, error: fetchError } = await supabase
+      .from('project_files')
+      .select('*')
+      .eq('id', file_id)
+      .eq('project_id', projectId)
+      .single();
+
+    if (fetchError || !file) {
+      console.log('❌ Файл не найден:', fetchError);
+      return NextResponse.json({ error: 'Файл не найден' }, { status: 404 });
+    }
+
+    console.log(`📄 Файл: ${file.file_name}, текущая папка: ${file.folder || 'root'}`);
+
+    // Формируем новый путь в Storage
+    const timestamp = Date.now();
+    const fileName = file.file_name;
+    const newFolderPath = target_folder ? `${target_folder}` : '';
+    const newFilePath = newFolderPath 
+      ? `projects/${projectId}/${newFolderPath}/${timestamp}_${fileName}`
+      : `projects/${projectId}/${timestamp}_${fileName}`;
+
+    console.log(`🗂️ Новый путь: ${newFilePath}`);
+
+    // Копируем файл в новое место в Storage
+    const { data: copyData, error: copyError } = await supabase
+      .storage
+      .from('invoice-files')
+      .copy(file.file_path, newFilePath);
+
+    if (copyError) {
+      console.error('❌ Ошибка копирования файла:', copyError);
+      return NextResponse.json({ 
+        error: 'Ошибка перемещения файла' 
+      }, { status: 500 });
+    }
+
+    console.log(`✅ Файл скопирован в новое место`);
+
+    // Получаем новый публичный URL
+    const { data: { publicUrl } } = supabase
+      .storage
+      .from('invoice-files')
+      .getPublicUrl(newFilePath);
+
+    // Обновляем запись в БД
+    const { data: updatedFile, error: updateError } = await supabase
+      .from('project_files')
+      .update({
+        folder: target_folder || null,
+        file_path: newFilePath,
+        public_url: publicUrl,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', file_id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('❌ Ошибка обновления БД:', updateError);
+      // Откатываем - удаляем скопированный файл
+      await supabase.storage.from('invoice-files').remove([newFilePath]);
+      return NextResponse.json({ 
+        error: 'Ошибка обновления метаданных' 
+      }, { status: 500 });
+    }
+
+    console.log(`✅ Метаданные обновлены`);
+
+    // Удаляем старый файл из Storage
+    const { error: deleteError } = await supabase
+      .storage
+      .from('invoice-files')
+      .remove([file.file_path]);
+
+    if (deleteError) {
+      console.error('⚠️ Ошибка удаления старого файла:', deleteError);
+    } else {
+      console.log(`✅ Старый файл удален`);
+    }
+
+    console.log(`🔄 Перемещение завершено успешно`);
+
+    return NextResponse.json({
+      success: true,
+      file: updatedFile
+    });
+
+  } catch (error) {
+    console.error('❌ ОШИБКА PATCH /api/projects/[id]/files:', error);
+    return NextResponse.json({ 
+      error: 'Внутренняя ошибка сервера' 
+    }, { status: 500 });
+  }
+}

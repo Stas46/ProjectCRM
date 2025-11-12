@@ -114,15 +114,39 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
 
     // Если перетаскиваем файл между папками
     if (draggedFile && targetFolder !== currentFolder) {
+      setUploading(true);
       await moveFile(draggedFile, targetFolder);
+      setUploading(false);
     }
     setDraggedFile(null);
   };
 
   const moveFile = async (fileId: string, targetFolder?: string) => {
-    // TODO: Implement move file API endpoint
-    console.log('Move file:', fileId, 'to folder:', targetFolder);
-    alert('Функция перемещения файлов будет добавлена');
+    try {
+      console.log('🔄 Перемещение файла:', fileId, 'в папку:', targetFolder);
+      
+      const response = await fetch(`/api/projects/${projectId}/files`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          file_id: fileId,
+          target_folder: targetFolder 
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('✅ Файл перемещен');
+        refresh(); // Обновляем список файлов
+      } else {
+        console.error('❌ Ошибка перемещения:', data.error);
+        alert(`Ошибка: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Ошибка перемещения файла:', error);
+      alert('Ошибка перемещения файла');
+    }
   };
 
   const handleDelete = async (fileId: string, fileName: string) => {
