@@ -28,6 +28,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const folder = searchParams.get('folder');
 
+    console.log(`📂 GET /api/projects/${projectId}/files`, { folder });
+
     // Получаем файлы проекта
     let query = supabase
       .from('project_files')
@@ -37,15 +39,18 @@ export async function GET(
 
     // Фильтр по папке
     if (folder) {
+      console.log(`📁 Фильтр по папке: ${folder}`);
       query = query.eq('folder', folder);
     }
 
     const { data: files, error } = await query;
 
     if (error) {
-      console.error('Ошибка получения файлов:', error);
+      console.error('❌ Ошибка получения файлов:', error);
       return NextResponse.json({ error: 'Ошибка загрузки файлов' }, { status: 500 });
     }
+
+    console.log(`✅ Найдено файлов: ${files?.length || 0}`);
 
     // Получаем список папок
     const { data: foldersData } = await supabase
@@ -60,6 +65,8 @@ export async function GET(
       file_count: files?.filter(f => f.folder === folderName).length || 0
     }));
 
+    console.log(`📁 Найдено папок: ${folders.length}`, folders);
+
     return NextResponse.json({
       success: true,
       files: files || [],
@@ -67,7 +74,7 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error('Ошибка GET /api/projects/[id]/files:', error);
+    console.error('❌ Ошибка GET /api/projects/[id]/files:', error);
     return NextResponse.json({ 
       error: 'Внутренняя ошибка сервера' 
     }, { status: 500 });
@@ -89,10 +96,13 @@ export async function POST(
     const userId = formData.get('user_id') as string | null;
 
     if (!file) {
+      console.log('❌ Файл не найден в FormData');
       return NextResponse.json({ error: 'Файл не найден' }, { status: 400 });
     }
 
-    console.log(`📁 Загрузка файла в проект ${projectId}: ${file.name}`);
+    console.log(`� POST /api/projects/${projectId}/files`);
+    console.log(`📄 Файл: ${file.name}, размер: ${file.size}, тип: ${file.type}`);
+    console.log(`📁 Папка: ${folder || 'root'}, пользователь: ${userId || 'unknown'}`);
 
     // Формируем путь к файлу
     const timestamp = Date.now();
@@ -100,6 +110,8 @@ export async function POST(
     const sanitizedName = file.name.replace(/[^a-zA-Zа-яА-Я0-9._-]/g, '_');
     const folderPath = folder ? `${folder}/` : '';
     const filePath = `projects/${projectId}/${folderPath}${timestamp}_${sanitizedName}`;
+
+    console.log(`🗂️ Путь в Storage: ${filePath}`);
 
     // Определяем MIME тип
     const mimeTypeMap: Record<string, string> = {
@@ -121,8 +133,12 @@ export async function POST(
 
     const contentType = mimeTypeMap[fileExt || ''] || 'application/octet-stream';
 
+    console.log(`🎨 MIME тип: ${contentType}`);
+
     // Загружаем в Storage
     const buffer = await file.arrayBuffer();
+    console.log(`📦 Буфер получен, размер: ${buffer.byteLength} байт`);
+    
     const { data: uploadData, error: uploadError } = await supabase
       .storage
       .from('invoice-files')
@@ -132,17 +148,21 @@ export async function POST(
       });
 
     if (uploadError) {
-      console.error('Ошибка загрузки в Storage:', uploadError);
+      console.error('❌ Ошибка загрузки в Storage:', uploadError);
       return NextResponse.json({ 
         error: 'Ошибка загрузки файла в Storage' 
       }, { status: 500 });
     }
+
+    console.log(`✅ Файл загружен в Storage:`, uploadData);
 
     // Получаем публичный URL
     const { data: { publicUrl } } = supabase
       .storage
       .from('invoice-files')
       .getPublicUrl(filePath);
+
+    console.log(`🔗 Публичный URL: ${publicUrl}`);
 
     // Сохраняем метаданные в БД
     const newFile: CreateProjectFile = {
@@ -156,6 +176,8 @@ export async function POST(
       public_url: publicUrl
     };
 
+    console.log(`💾 Сохраняем метаданные в БД:`, newFile);
+
     const { data: savedFile, error: dbError } = await supabase
       .from('project_files')
       .insert(newFile)
@@ -163,15 +185,17 @@ export async function POST(
       .single();
 
     if (dbError) {
-      console.error('Ошибка сохранения метаданных:', dbError);
+      console.error('❌ Ошибка сохранения метаданных в БД:', dbError);
       // Удаляем файл из Storage если не удалось сохранить в БД
+      console.log(`🗑️ Удаляем файл из Storage: ${filePath}`);
       await supabase.storage.from('invoice-files').remove([filePath]);
       return NextResponse.json({ 
         error: 'Ошибка сохранения метаданных файла' 
       }, { status: 500 });
     }
 
-    console.log(`✅ Файл загружен: ${publicUrl}`);
+    console.log(`✅ Файл успешно загружен и сохранен!`);
+    console.log(`📊 Данные файла:`, savedFile);
 
     return NextResponse.json({
       success: true,
@@ -179,13 +203,15 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Ошибка POST /api/projects/[id]/files:', error);
+    console.error('❌ Критическая ошибка POST /api/projects/[id]/files:', error);
     return NextResponse.json({ 
       error: 'Внутренняя ошибка сервера' 
     }, { status: 500 });
   }
 }
 
+// ============================================
+// DELETE - Удалить файл
 // ============================================
 // DELETE - Удалить файл
 // ============================================
@@ -198,7 +224,10 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get('file_id');
 
+    console.log(`🗑️ DELETE /api/projects/${projectId}/files?file_id=${fileId}`);
+
     if (!fileId) {
+      console.log('❌ ID файла не указан');
       return NextResponse.json({ error: 'ID файла не указан' }, { status: 400 });
     }
 
@@ -211,8 +240,11 @@ export async function DELETE(
       .single();
 
     if (fetchError || !file) {
+      console.log('❌ Файл не найден:', fetchError);
       return NextResponse.json({ error: 'Файл не найден' }, { status: 404 });
     }
+
+    console.log(`📄 Удаляем файл: ${file.file_name} (${file.file_path})`);
 
     // Удаляем из Storage
     const { error: storageError } = await supabase
@@ -221,7 +253,9 @@ export async function DELETE(
       .remove([file.file_path]);
 
     if (storageError) {
-      console.error('Ошибка удаления из Storage:', storageError);
+      console.error('⚠️ Ошибка удаления из Storage:', storageError);
+    } else {
+      console.log('✅ Файл удален из Storage');
     }
 
     // Удаляем из БД
@@ -231,13 +265,14 @@ export async function DELETE(
       .eq('id', fileId);
 
     if (dbError) {
-      console.error('Ошибка удаления из БД:', dbError);
+      console.error('❌ Ошибка удаления из БД:', dbError);
       return NextResponse.json({ 
         error: 'Ошибка удаления файла' 
       }, { status: 500 });
     }
 
-    console.log(`🗑️ Файл удален: ${file.file_name}`);
+    console.log(`✅ Файл удален из БД: ${file.file_name}`);
+    console.log(`🗑️ Удаление завершено успешно`);
 
     return NextResponse.json({
       success: true,
@@ -245,7 +280,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Ошибка DELETE /api/projects/[id]/files:', error);
+    console.error('❌ ОШИБКА DELETE /api/projects/[id]/files:', error);
     return NextResponse.json({ 
       error: 'Внутренняя ошибка сервера' 
     }, { status: 500 });
