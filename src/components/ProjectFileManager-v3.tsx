@@ -253,6 +253,17 @@ export function ProjectFileManager({ projectId, userId, invoices = [] }: Project
     if (selectedFolder === '__invoices__') {
       return (
         <div className="space-y-1">
+          {/* Кнопка возврата */}
+          <button
+            onClick={() => setSelectedFolder(null)}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded w-full transition-colors"
+          >
+            <span>←</span>
+            <span>Назад к файлам</span>
+          </button>
+          
+          <div className="h-px bg-gray-200 my-2" />
+          
           {invoices.length === 0 ? (
             <p className="text-sm text-gray-500 py-8 text-center">Счетов пока нет</p>
           ) : (
