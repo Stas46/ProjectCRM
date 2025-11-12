@@ -105,19 +105,34 @@ async function getOrCreateSupplier(
 // ============================================
 // Функция: Загрузка файла в Storage
 // ============================================
-async function uploadFileToStorage(file: File): Promise<string | null> {
+async function uploadFileToStorage(
+  file: File,
+  buffer: Buffer,
+  invoiceNumber?: string,
+  invoiceDate?: string
+): Promise<string | null> {
   const maxRetries = 3;
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(7);
       
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      // Если есть номер счета и дата, используем их в имени файла
+      let fileName: string;
+      if (invoiceNumber && invoiceDate) {
+        // Очищаем номер счета от спецсимволов
+        const cleanNumber = invoiceNumber.replace(/[^a-zA-Zа-яА-Я0-9]/g, '').substring(0, 20);
+        // Форматируем дату (только yyyy-mm-dd)
+        const dateOnly = invoiceDate.split('T')[0];
+        fileName = `${cleanNumber}_${dateOnly}_${timestamp}.${fileExt}`;
+      } else {
+        fileName = `${timestamp}-${randomStr}.${fileExt}`;
+      }
+      
       const filePath = `invoices/${fileName}`;
-      
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
       
       // Определяем правильный MIME-type для всех типов файлов
       let contentType = file.type || 'application/octet-stream';
@@ -625,15 +640,44 @@ export async function POST(request: NextRequest) {
       console.log(`🔗 Привязка к проекту: ${projectId}`);
     }
     
-    // Шаг 1: Загружаем файл в Storage (все типы файлов)
-    let fileUrl: string | null = null;
+    // Шаг 1: Получаем буфер файла (arrayBuffer можно вызвать только раз!)
+    const buffer = Buffer.from(await file.arrayBuffer());
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     const isExcel = fileExt === 'xls' || fileExt === 'xlsx' || fileExt === 'xlsm';
     const isWord = fileExt === 'doc' || fileExt === 'docx';
     const isOfficeFile = isExcel || isWord;
     
+    // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Office файлов)
+    let ocrText: string;
+    
+    if (isOfficeFile) {
+      // Для Excel и Word используем office_to_text.py
+      const docType = isExcel ? 'Excel' : 'Word';
+      console.log(`📄 Извлечение текста из ${docType}...`);
+      ocrText = await extractTextFromExcel(buffer, file.name);
+    } else {
+      // Для PDF/изображений используем OCR
+      const isPdf = file.type === 'application/pdf';
+      ocrText = await extractTextFromImage(buffer, isPdf);
+    }
+    
+    if (!ocrText) {
+      return NextResponse.json({ error: 'Не удалось распознать текст' }, { status: 500 });
+    }
+    
+    // Шаг 3: Парсинг данных через Python
+    const parsed = await parseInvoiceWithPython(ocrText);
+    
+    // Шаг 4: Загружаем файл в Storage с умным именем (номер_дата_timestamp)
+    let fileUrl: string | null = null;
+    
     try {
-      fileUrl = await uploadFileToStorage(file);
+      fileUrl = await uploadFileToStorage(
+        file, 
+        buffer,
+        parsed.invoice_number || undefined,
+        parsed.invoice_date || undefined
+      );
       const fileType = isExcel ? 'Excel' : isWord ? 'Word' : 'PDF/Image';
       logger.info('Файл загружен в Storage', { requestId, fileUrl, fileType });
       console.log(`✅ Файл ${file.name} успешно загружен: ${fileUrl}`);
@@ -654,35 +698,13 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // Шаг 2: Получаем текст (OCR для PDF/изображений, извлечение для Office файлов)
-    const buffer = Buffer.from(await file.arrayBuffer());
-    let ocrText: string;
-    
-    if (isOfficeFile) {
-      // Для Excel и Word используем office_to_text.py
-      const docType = isExcel ? 'Excel' : 'Word';
-      console.log(`� Извлечение текста из ${docType}...`);
-      ocrText = await extractTextFromExcel(buffer, file.name);
-    } else {
-      // Для PDF/изображений используем OCR
-      const isPdf = file.type === 'application/pdf';
-      ocrText = await extractTextFromImage(buffer, isPdf);
-    }
-    
-    if (!ocrText) {
-      return NextResponse.json({ error: 'Не удалось распознать текст' }, { status: 500 });
-    }
-    
-    // Шаг 3: Парсинг данных через Python
-    const parsed = await parseInvoiceWithPython(ocrText);
-    
-    // Шаг 4: Получить или создать поставщика
+    // Шаг 5: Получить или создать поставщика
     const supplierId = await getOrCreateSupplier(
       parsed.supplier_name || 'Неизвестный поставщик',
       parsed.supplier_inn
     );
     
-    // Шаг 5: Создаем счет в БД
+    // Шаг 6: Создаем счет в БД
     const newInvoice: CreateInvoice = {
       supplier_id: supplierId || undefined,
       invoice_number: parsed.invoice_number || 'Не распознан',
