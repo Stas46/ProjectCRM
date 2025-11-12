@@ -1,0 +1,174 @@
+{
+  "name": "CRM Invoice Email Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-created",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-invoice",
+      "name": "Invoice Created Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "invoice-created"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.type}}",
+              "value2": "invoice_created"
+            }
+          ]
+        }
+      },
+      "id": "filter-invoice",
+      "name": "Is Invoice Created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "to",
+              "value": "admin@stella-spb.ru"
+            },
+            {
+              "name": "subject",
+              "value": "=📄 Новый счет №{{$json.invoice.number}} от {{$json.invoice.supplier_name}}"
+            },
+            {
+              "name": "html",
+              "value": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }\n    .content { padding: 20px; background: #f9f9f9; }\n    .info-block { margin: 15px 0; padding: 15px; background: white; border-left: 4px solid #4CAF50; border-radius: 3px; }\n    .label { font-weight: bold; color: #666; font-size: 14px; }\n    .value { color: #333; font-size: 18px; margin-top: 5px; }\n    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }\n    .button { display: inline-block; padding: 12px 30px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>📄 Новый счет распознан</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"info-block\">\n        <div class=\"label\">Номер счета</div>\n        <div class=\"value\">{{$json.invoice.number}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Поставщик</div>\n        <div class=\"value\">{{$json.invoice.supplier_name}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">ИНН поставщика</div>\n        <div class=\"value\">{{$json.invoice.supplier_inn}}</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Сумма</div>\n        <div class=\"value\" style=\"color: #4CAF50; font-size: 24px; font-weight: bold;\">{{$json.invoice.total_amount}} ₽</div>\n      </div>\n      <div class=\"info-block\">\n        <div class=\"label\">Дата счета</div>\n        <div class=\"value\">{{$json.invoice.date}}</div>\n      </div>\n      <div style=\"text-align: center; margin-top: 30px;\">\n        <a href=\"https://alu.stella-spb.ru/invoices\" class=\"button\">Открыть в CRM</a>\n      </div>\n    </div>\n    <div class=\"footer\">\n      <p>Это автоматическое уведомление из CRM системы</p>\n      <p>Glazing CRM | alu.stella-spb.ru</p>\n      <p style=\"font-size: 10px; color: #999;\">ID: {{$json.invoice.id}}</p>\n    </div>\n  </div>\n</body>\n</html>"
+            },
+            {
+              "name": "message",
+              "value": "=Новый счет распознан\n\nНомер счета: {{$json.invoice.number}}\nПоставщик: {{$json.invoice.supplier_name}}\nИНН: {{$json.invoice.supplier_inn}}\nСумма: {{$json.invoice.total_amount}} ₽\nДата: {{$json.invoice.date}}\n\nID счета: {{$json.invoice.id}}\n\n---\nGlazing CRM | alu.stella-spb.ru"
+            }
+          ]
+        }
+      },
+      "id": "set-email-data",
+      "name": "Prepare Email Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@stella-spb.ru",
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "emailFormat": "both",
+        "text": "={{$json.message}}",
+        "html": "={{$json.html}}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email via Yandex",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "credentials": {
+        "smtp": {
+          "id": "yandex_smtp",
+          "name": "Yandex SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Email notification sent', invoice_id: $json.invoice.id, timestamp: $now } }}"
+      },
+      "id": "response-success",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, message: 'Not an invoice event', type: $json.type } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "response-skip",
+      "name": "Skip Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 400]
+    }
+  ],
+  "connections": {
+    "Invoice Created Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Invoice Created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Invoice Created?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email via Yandex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email via Yandex": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-12T00:00:00.000Z",
+  "versionId": "1"
+}
