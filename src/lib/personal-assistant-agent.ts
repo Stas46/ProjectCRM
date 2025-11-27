@@ -528,7 +528,7 @@ async function executePersonalAction(
         break;
       }
 
-      // ========== СОХРАНИТЬ ПРЕДПОЧТЕНИЕ ==========
+      // ========== СОХРАНИТЬ ПРЕДПОЧТЕНИЕ/ФАКТ ==========
       case 'save_preference': {
         const key = intent.data?.key;
         const value = intent.data?.value;
@@ -733,26 +733,6 @@ async function executePersonalAction(
           });
         }
 
-        break;
-      }
-
-      // ========== СОХРАНИТЬ ПРЕДПОЧТЕНИЕ/ФАКТ ==========
-      case 'save_preference': {
-        const key = intent.data?.key;
-        const value = intent.data?.value;
-        
-        if (!key) {
-          result = 'Ошибка: не указан ключ для сохранения';
-          break;
-        }
-
-        const { success, error } = await saveContext(userId, 'fact', key, value, { source: 'user_said' });
-        
-        if (error) {
-          result = `❌ Ошибка сохранения: ${error}`;
-        } else {
-          result = `✅ Запомнил: ${key}`;
-        }
         break;
       }
 

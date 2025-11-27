@@ -167,12 +167,24 @@ export async function POST(req: NextRequest) {
     // Гибридный режим - Personal Assistant (CRM + личное + погода)
     else {
       try {
+        console.log('🤖 Running Personal Assistant for:', text);
+        
         // Используем Personal Assistant который объединяет всё
-        const { data: assistantResponse } = await runPersonalAssistant(userId, text);
+        const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text);
+        
+        console.log('📊 Personal Assistant Result:', {
+          sessionId,
+          action: intent.action,
+          reasoning: intent.reasoning,
+          responseLength: assistantResponse?.length || 0,
+          hasProactiveQuestion: !!intent.proactive_question
+        });
         
         if (assistantResponse && assistantResponse !== 'Нет данных') {
+          console.log('✅ Personal Assistant response:', assistantResponse.substring(0, 200));
           finalResponse = assistantResponse;
         } else {
+          console.log('⚠️ Personal Assistant returned empty, falling back to AI');
           // Фоллбэк на обычный AI если ассистент не смог помочь
           finalResponse = await getAIResponse(text);
         }
@@ -190,8 +202,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Отправляем ответ
+    console.log('📤 Sending to Telegram:', {
+      chatId,
+      responseLength: finalResponse.length,
+      preview: finalResponse.substring(0, 100)
+    });
+    
     const formattedResponse = formatForTelegram(finalResponse);
     await sendTelegramMessage(chatId, formattedResponse || 'Не удалось получить ответ');
+
+    console.log('✅ Message sent successfully');
 
     return NextResponse.json({ ok: true });
 
