@@ -851,7 +851,7 @@ export async function getInvoicesAnalytics(
     }, {} as Record<string, { month: string; total: number; count: number }>);
 
     // Топ-5 поставщиков
-    const topSuppliers = Object.values(bySupplier)
+    const topSuppliers = (Object.values(bySupplier) as Array<{ supplier: string; total: number; count: number }>)
       .sort((a, b) => b.total - a.total)
       .slice(0, 5)
       .map(s => ({ supplier: s.supplier, total: s.total }));
