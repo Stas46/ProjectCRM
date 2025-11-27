@@ -668,12 +668,24 @@ async function parseInvoiceWithPython(text: string): Promise<ParsedInvoiceData> 
     const parsed = JSON.parse(jsonString);
     console.log('✅ Python парсинг завершен:', parsed);
     
+    // Вычисляем НДС если есть ставка но нет суммы
+    let vatAmount = parsed.invoice?.vat_amount ? parseFloat(parsed.invoice.vat_amount) : null;
+    const totalAmount = parsed.invoice?.total_amount ? parseFloat(parsed.invoice.total_amount) : null;
+    const vatRate = parsed.invoice?.vat_rate ? parseFloat(parsed.invoice.vat_rate) : null;
+    
+    if (!vatAmount && vatRate && totalAmount) {
+      // Формула: НДС = Сумма * Ставка / (100 + Ставка)
+      // Например: 53845 * 20 / 120 = 8974.17
+      vatAmount = Math.round((totalAmount * vatRate / (100 + vatRate)) * 100) / 100;
+      console.log(`📊 Вычислен НДС: ${vatAmount} (ставка ${vatRate}%, сумма ${totalAmount})`);
+    }
+    
     // Python возвращает вложенную структуру {invoice: {...}, contractor: {...}}
     return {
       invoice_number: parsed.invoice?.number || null,
       invoice_date: parsed.invoice?.date || null,
-      total_amount: parsed.invoice?.total_amount ? parseFloat(parsed.invoice.total_amount) : null,
-      vat_amount: parsed.invoice?.vat_amount ? parseFloat(parsed.invoice.vat_amount) : null,
+      total_amount: totalAmount,
+      vat_amount: vatAmount,
       supplier_name: parsed.contractor?.name || null,
       supplier_inn: parsed.contractor?.inn || null,
     };

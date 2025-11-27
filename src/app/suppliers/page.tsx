@@ -3,12 +3,25 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Supplier, SupplierCategory, expenseCategoryMap } from '@/types/supplier';
-import { Home, Package, Edit, Save, X } from 'lucide-react';
+import { Home, Package, Edit, Save, X, Trash2, FileText, ExternalLink } from 'lucide-react';
 
 interface SupplierWithStats extends Supplier {
   invoiceCount: number;
   totalAmount: number;
   totalVat: number;
+}
+
+interface SupplierInvoice {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  total_amount: number;
+  vat_amount: number;
+  project_id: string | null;
+  file_url: string | null;
+  project?: {
+    name: string;
+  };
 }
 
 export default function SuppliersPage() {
@@ -17,6 +30,10 @@ export default function SuppliersPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [editingSupplier, setEditingSupplier] = useState<SupplierWithStats | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [supplierInvoices, setSupplierInvoices] = useState<SupplierInvoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [editData, setEditData] = useState({
     name: '',
     inn: ''
@@ -86,6 +103,58 @@ export default function SuppliersPage() {
       name: supplier.name,
       inn: supplier.inn || ''
     });
+    setShowDeleteConfirm(false);
+    loadSupplierInvoices(supplier.id);
+  }
+
+  async function loadSupplierInvoices(supplierId: string) {
+    setLoadingInvoices(true);
+    try {
+      // Загружаем счета
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, invoice_date, total_amount, vat_amount, project_id, file_url')
+        .eq('supplier_id', supplierId)
+        .order('invoice_date', { ascending: false });
+
+      if (invoicesError) throw invoicesError;
+
+      // Загружаем проекты для счетов с project_id
+      const projectIds = [...new Set((invoicesData || []).filter(i => i.project_id).map(i => i.project_id))];
+      let projectsMap: Record<string, string> = {};
+      
+      if (projectIds.length > 0) {
+        const { data: projectsData } = await supabase
+          .from('projects')
+          .select('id, name')
+          .in('id', projectIds);
+        
+        projectsMap = (projectsData || []).reduce((acc, p) => {
+          acc[p.id] = p.name;
+          return acc;
+        }, {} as Record<string, string>);
+      }
+
+      // Собираем результат
+      const invoicesWithProjects = (invoicesData || []).map(inv => ({
+        ...inv,
+        project: inv.project_id ? { name: projectsMap[inv.project_id] || '' } : null
+      }));
+
+      setSupplierInvoices(invoicesWithProjects);
+    } catch (error) {
+      console.error('Ошибка загрузки счетов:', error);
+      setSupplierInvoices([]);
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }
+
+  function closeEditModal() {
+    setEditingSupplier(null);
+    setEditData({ name: '', inn: '' });
+    setSupplierInvoices([]);
+    setShowDeleteConfirm(false);
   }
 
   async function saveSupplierEdit() {
@@ -111,13 +180,44 @@ export default function SuppliersPage() {
         )
       );
 
-      setEditingSupplier(null);
-      setEditData({ name: '', inn: '' });
+      closeEditModal();
     } catch (error) {
       console.error('Ошибка:', error);
       alert('Ошибка при сохранении');
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function deleteSupplier() {
+    if (!editingSupplier || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      // Сначала обнуляем supplier_id у всех счетов этого поставщика
+      const { error: invoicesError } = await supabase
+        .from('invoices')
+        .update({ supplier_id: null })
+        .eq('supplier_id', editingSupplier.id);
+
+      if (invoicesError) throw invoicesError;
+
+      // Затем удаляем поставщика
+      const { error } = await supabase
+        .from('suppliers')
+        .delete()
+        .eq('id', editingSupplier.id);
+
+      if (error) throw error;
+
+      // Обновляем локальное состояние
+      setSuppliers(prev => prev.filter(s => s.id !== editingSupplier.id));
+      closeEditModal();
+    } catch (error) {
+      console.error('Ошибка удаления:', error);
+      alert('Ошибка при удалении поставщика');
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -373,22 +473,19 @@ export default function SuppliersPage() {
       {/* Модальное окно редактирования */}
       {editingSupplier && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Редактировать поставщика</h3>
               <button
-                onClick={() => {
-                  setEditingSupplier(null);
-                  setEditData({ name: '', inn: '' });
-                }}
-                disabled={isSaving}
+                onClick={closeEditModal}
+                disabled={isSaving || isDeleting}
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Название
@@ -416,26 +513,134 @@ export default function SuppliersPage() {
                 />
               </div>
 
-              <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
-                <strong>Внимание:</strong> Изменение названия или ИНН повлияет на все счета этого поставщика 
-                ({editingSupplier.invoiceCount} {editingSupplier.invoiceCount === 1 ? 'счет' : 'счетов'}).
+              {/* Счета поставщика */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-gray-500" />
+                    <label className="text-sm font-medium text-gray-700">
+                      Счета ({supplierInvoices.length})
+                    </label>
+                  </div>
+                  {supplierInvoices.length > 0 && (
+                    <div className="text-sm font-semibold text-gray-900">
+                      Итого: {supplierInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0).toLocaleString('ru-RU')} ₽
+                    </div>
+                  )}
+                </div>
+                
+                {loadingInvoices ? (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent mx-auto"></div>
+                  </div>
+                ) : supplierInvoices.length === 0 ? (
+                  <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg text-center">
+                    Нет счетов
+                  </div>
+                ) : (
+                  <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                    {supplierInvoices.map((invoice) => (
+                      <div 
+                        key={invoice.id} 
+                        onClick={() => {
+                          if (invoice.file_url) {
+                            window.open(invoice.file_url, '_blank');
+                          }
+                        }}
+                        className={`p-2 hover:bg-gray-50 flex items-center justify-between gap-2 ${invoice.file_url ? 'cursor-pointer' : ''}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-gray-900">
+                              №{invoice.invoice_number}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('ru-RU') : '—'}
+                            </span>
+                          </div>
+                          {invoice.project && (
+                            <div className="text-xs text-gray-500 truncate">
+                              {(invoice.project as { name: string }).name}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-sm font-medium text-gray-900">
+                            {invoice.total_amount?.toLocaleString('ru-RU')} ₽
+                          </div>
+                          {invoice.vat_amount && invoice.vat_amount > 0 && (
+                            <div className="text-xs text-gray-500">
+                              НДС: {invoice.vat_amount.toLocaleString('ru-RU')} ₽
+                            </div>
+                          )}
+                        </div>
+                        {invoice.file_url && (
+                          <ExternalLink className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Кнопка удаления */}
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 border border-red-200 rounded-lg min-h-[44px]"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Удалить поставщика
+                </button>
+              ) : (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800 mb-3">
+                    <strong>Вы уверены?</strong> Поставщик будет удален.
+                    {supplierInvoices.length > 0 && (
+                      <> У {supplierInvoices.length} счетов будет убрана привязка к поставщику.</>
+                    )}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={isDeleting}
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      onClick={deleteSupplier}
+                      disabled={isDeleting}
+                      className="flex-1 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                          Удаление...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Удалить
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 p-4 border-t bg-gray-50">
               <button
-                onClick={() => {
-                  setEditingSupplier(null);
-                  setEditData({ name: '', inn: '' });
-                }}
-                disabled={isSaving}
+                onClick={closeEditModal}
+                disabled={isSaving || isDeleting}
                 className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100 min-h-[44px] disabled:opacity-50"
               >
                 Отмена
               </button>
               <button
                 onClick={saveSupplierEdit}
-                disabled={!editData.name.trim() || isSaving}
+                disabled={!editData.name.trim() || isSaving || isDeleting}
                 className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
               >
                 {isSaving ? (
