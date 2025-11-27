@@ -1,8 +1,22 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Upload, Home, FileText, Trash2, Link as LinkIcon, X, Edit, Save } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Upload, Home, FileText, Trash2, Link as LinkIcon, X, Edit, Save, AlertTriangle, Check, RefreshCw } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
+
+// Информация о возможном дубликате
+interface DuplicateInfo {
+  invoice_id: string;  // ID нового загруженного счёта
+  duplicates: {
+    id: string;
+    invoice_number: string;
+    invoice_date: string;
+    total_amount: number;
+    supplier_name: string;
+    file_url: string;
+    matches: string[];
+  }[];
+}
 
 interface Invoice {
   id: string;
@@ -42,6 +56,7 @@ export default function InvoicesPage() {
   const [uploadProgress, setUploadProgress] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [showProjectSelect, setShowProjectSelect] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -52,6 +67,9 @@ export default function InvoicesPage() {
     vat_amount: '',
     supplier_id: '',
   });
+
+  // Информация о дубликатах (ключ = ID нового счёта)
+  const [duplicateWarnings, setDuplicateWarnings] = useState<Map<string, DuplicateInfo>>(new Map());
 
   // Фильтры
   const [filterProject, setFilterProject] = useState<string>('all');
@@ -138,6 +156,8 @@ export default function InvoicesPage() {
       const totalFiles = files.length;
       let successCount = 0;
       let errorCount = 0;
+      let duplicateCount = 0;
+      const newDuplicates = new Map<string, DuplicateInfo>();
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -160,26 +180,86 @@ export default function InvoicesPage() {
           }
 
           successCount++;
+          
+          // Проверяем на возможный дубликат (счёт создан, но есть похожие)
+          if (responseData.is_possible_duplicate && responseData.possible_duplicates?.length > 0 && responseData.invoice?.id) {
+            duplicateCount++;
+            newDuplicates.set(responseData.invoice.id, {
+              invoice_id: responseData.invoice.id,
+              duplicates: responseData.possible_duplicates,
+            });
+          }
         } catch (err) {
           console.error(`Ошибка файла ${file.name}:`, err);
           errorCount++;
         }
       }
 
+      let statusMessage = `✅ Загружено: ${successCount}`;
+      if (duplicateCount > 0) statusMessage += `, ⚠️ дубликатов: ${duplicateCount}`;
+      if (errorCount > 0) statusMessage += `, ошибок: ${errorCount}`;
+      
       if (successCount > 0) {
-        setUploadProgress(`✅ Обработано: ${successCount}, ошибок: ${errorCount}`);
+        setUploadProgress(statusMessage);
         await loadInvoices();
+        
+        // Сохраняем информацию о дубликатах для показа в таблице
+        if (newDuplicates.size > 0) {
+          setDuplicateWarnings(prev => {
+            const updated = new Map(prev);
+            newDuplicates.forEach((value, key) => updated.set(key, value));
+            return updated;
+          });
+        }
       } else {
         setUploadProgress(`⚠️ Все файлы завершились с ошибкой`);
       }
 
-      setTimeout(() => setUploadProgress(''), 3000);
+      setTimeout(() => setUploadProgress(''), 5000);
     } catch (err) {
       console.error('Ошибка:', err);
       setUploadProgress('❌ Ошибка загрузки');
       setTimeout(() => setUploadProgress(''), 3000);
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Действия с дубликатами
+  const handleDuplicateAction = async (invoiceId: string, action: 'delete' | 'update' | 'keep') => {
+    const duplicateInfo = duplicateWarnings.get(invoiceId);
+    if (!duplicateInfo) return;
+    
+    const { supabase } = await import('@/lib/supabase');
+    
+    try {
+      if (action === 'delete') {
+        // Удалить новый счёт (текущий)
+        const { error } = await supabase.from('invoices').delete().eq('id', invoiceId);
+        if (error) throw error;
+        console.log(`🗑️ Удалён новый счёт ${invoiceId}`);
+      } else if (action === 'update') {
+        // Удалить все старые дубликаты
+        for (const dup of duplicateInfo.duplicates) {
+          const { error } = await supabase.from('invoices').delete().eq('id', dup.id);
+          if (error) throw error;
+          console.log(`🗑️ Удалён старый дубликат ${dup.id}`);
+        }
+      }
+      // action === 'keep' — ничего не делаем, просто убираем предупреждение
+      
+      // Убираем предупреждение о дубликате
+      setDuplicateWarnings(prev => {
+        const updated = new Map(prev);
+        updated.delete(invoiceId);
+        return updated;
+      });
+      
+      // Перезагружаем список счетов
+      await loadInvoices();
+    } catch (err) {
+      console.error('Ошибка при обработке дубликата:', err);
+      alert('Ошибка при обработке дубликата');
     }
   };
 
@@ -252,6 +332,7 @@ export default function InvoicesPage() {
       await loadInvoices();
       setSelectedInvoices(new Set());
       setShowProjectSelect(false);
+      setProjectSearchQuery('');
     } catch (err) {
       console.error('Ошибка привязки к проекту:', err);
       alert('Ошибка при привязке к проекту');
@@ -744,35 +825,67 @@ export default function InvoicesPage() {
           </div>
         )}
 
-        {/* Окно выбора проекта */}
+        {/* Окно выбора проекта - компактное модальное окно */}
         {showProjectSelect && (
-          <div className="mb-4 bg-white rounded-lg shadow-sm border p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Выберите проект для привязки ({selectedInvoices.size} счетов)</h3>
-              <button
-                onClick={() => setShowProjectSelect(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
+          <>
+            {/* Затемнённый фон для закрытия по клику */}
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-30 z-40"
+              onClick={() => {
+                setShowProjectSelect(false);
+                setProjectSearchQuery('');
+              }}
+            />
+            {/* Модальное окно */}
+            <div className="fixed inset-x-4 top-1/4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-96 bg-white rounded-lg shadow-xl border z-50 max-h-[60vh] flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b">
+                <h3 className="font-semibold text-gray-900">Привязать к проекту ({selectedInvoices.size} шт.)</h3>
+                <button
+                  onClick={() => {
+                    setShowProjectSelect(false);
+                    setProjectSearchQuery('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-2 border-b">
+                <input
+                  type="text"
+                  placeholder="Поиск проекта..."
+                  value={projectSearchQuery}
+                  onChange={(e) => setProjectSearchQuery(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+              <div className="overflow-y-auto flex-1 p-2">
+                {projects.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-2">Нет доступных проектов</p>
+                ) : (
+                  projects
+                    .filter(p => {
+                      if (!projectSearchQuery) return true;
+                      const search = projectSearchQuery.toLowerCase();
+                      return p.title.toLowerCase().includes(search) || p.client.toLowerCase().includes(search);
+                    })
+                    .map(project => (
+                    <button
+                      key={project.id}
+                      onClick={() => linkToProject(project.id)}
+                      className="w-full p-2 text-left rounded hover:bg-blue-50 transition-colors flex items-center gap-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 text-sm truncate">{project.title}</div>
+                        <div className="text-xs text-gray-500 truncate">{project.client}</div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
-            <div className="grid md:grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-              {projects.length === 0 ? (
-                <p className="text-sm text-gray-500 col-span-2">Нет доступных проектов</p>
-              ) : (
-                projects.map(project => (
-                  <button
-                    key={project.id}
-                    onClick={() => linkToProject(project.id)}
-                    className="p-3 text-left border rounded hover:bg-blue-50 hover:border-blue-500 transition-colors"
-                  >
-                    <div className="font-medium text-gray-900">{project.title}</div>
-                    <div className="text-sm text-gray-600">{project.client}</div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          </>
         )}
 
         {filteredInvoices.length === 0 ? (
@@ -824,10 +937,13 @@ export default function InvoicesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredInvoices.map((invoice, idx) => (
+                  {filteredInvoices.map((invoice, idx) => {
+                    const dupInfo = duplicateWarnings.get(invoice.id);
+                    return (
+                    <React.Fragment key={invoice.id}>
                     <tr 
-                      key={invoice.id} 
                       className={`transition-colors ${
+                        dupInfo ? 'bg-yellow-50 border-l-4 border-yellow-400' :
                         selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
@@ -839,7 +955,10 @@ export default function InvoicesPage() {
                           className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="px-3 py-2 text-gray-500">{invoices.length - idx}</td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {dupInfo && <AlertTriangle className="w-4 h-4 text-yellow-600 inline mr-1" />}
+                        {invoices.length - idx}
+                      </td>
                       <td className="px-3 py-2 font-medium text-gray-900">{invoice.invoice_number}</td>
                       <td className="px-3 py-2 text-gray-600">
                         {new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}
@@ -895,20 +1014,111 @@ export default function InvoicesPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    {/* Строка предупреждения о дубликате */}
+                    {dupInfo && (
+                      <tr key={`dup-${invoice.id}`} className="bg-yellow-50">
+                        <td colSpan={12} className="px-4 py-3">
+                          <div className="flex flex-col md:flex-row md:items-center gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 text-yellow-800 font-medium text-sm">
+                                <AlertTriangle className="w-4 h-4" />
+                                Возможный дубликат!
+                              </div>
+                              <div className="text-xs text-yellow-700 mt-1">
+                                Совпадает со счётом #{dupInfo.duplicates[0]?.invoice_number} от {' '}
+                                {dupInfo.duplicates[0]?.invoice_date && new Date(dupInfo.duplicates[0].invoice_date).toLocaleDateString('ru-RU')}
+                                {' '}({dupInfo.duplicates[0]?.matches?.join(', ')})
+                                {dupInfo.duplicates[0]?.file_url && (
+                                  <a href={dupInfo.duplicates[0].file_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline">
+                                    📎 Открыть оригинал
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleDuplicateAction(invoice.id, 'delete')}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-100 text-red-700 hover:bg-red-200 rounded border border-red-300"
+                                title="Удалить этот новый счёт"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Удалить новый
+                              </button>
+                              <button
+                                onClick={() => handleDuplicateAction(invoice.id, 'update')}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 rounded border border-blue-300"
+                                title="Удалить старый счёт, оставить новый"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                Заменить старый
+                              </button>
+                              <button
+                                onClick={() => handleDuplicateAction(invoice.id, 'keep')}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded border border-green-300"
+                                title="Оставить оба счёта"
+                              >
+                                <Check className="w-3 h-3" />
+                                Оставить оба
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Мобильные карточки */}
             <div className="md:hidden space-y-2">
-              {filteredInvoices.map((invoice, idx) => (
+              {filteredInvoices.map((invoice, idx) => {
+                const dupInfo = duplicateWarnings.get(invoice.id);
+                return (
                 <div 
                   key={invoice.id}
                   className={`bg-white rounded-lg shadow-sm border p-3 ${
+                    dupInfo ? 'border-yellow-400 bg-yellow-50' :
                     selectedInvoices.has(invoice.id) ? 'border-blue-500 bg-blue-50' : ''
                   }`}
                 >
+                  {/* Предупреждение о дубликате (мобильная версия) */}
+                  {dupInfo && (
+                    <div className="mb-3 pb-3 border-b border-yellow-300">
+                      <div className="flex items-center gap-2 text-yellow-800 font-medium text-sm mb-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        Возможный дубликат!
+                      </div>
+                      <div className="text-xs text-yellow-700 mb-2">
+                        Совпадает: {dupInfo.duplicates[0]?.matches?.join(', ')}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleDuplicateAction(invoice.id, 'delete')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs bg-red-100 text-red-700 rounded border border-red-300"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Удалить
+                        </button>
+                        <button
+                          onClick={() => handleDuplicateAction(invoice.id, 'update')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs bg-blue-100 text-blue-700 rounded border border-blue-300"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Заменить
+                        </button>
+                        <button
+                          onClick={() => handleDuplicateAction(invoice.id, 'keep')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs bg-green-100 text-green-700 rounded border border-green-300"
+                        >
+                          <Check className="w-3 h-3" />
+                          Оба
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {/* Строка 1: Чекбокс + Номер счета + Дата + Действия */}
                   <div className="flex items-center gap-2 mb-2">
                     <input
@@ -979,7 +1189,7 @@ export default function InvoicesPage() {
                     )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </>
         )}

@@ -123,8 +123,8 @@ async function uploadFileToStorage(
       // Если есть номер счета и дата, используем их в имени файла
       let fileName: string;
       if (invoiceNumber && invoiceDate) {
-        // Очищаем номер счета от спецсимволов
-        const cleanNumber = invoiceNumber.replace(/[^a-zA-Zа-яА-Я0-9]/g, '').substring(0, 20);
+        // Очищаем номер счета от спецсимволов И кириллицы (Supabase Storage не поддерживает)
+        const cleanNumber = invoiceNumber.replace(/[^a-zA-Z0-9-]/g, '').substring(0, 20) || 'invoice';
         // Форматируем дату (только yyyy-mm-dd)
         const dateOnly = invoiceDate.split('T')[0];
         fileName = `${cleanNumber}_${dateOnly}_${timestamp}.${fileExt}`;
@@ -401,13 +401,82 @@ function runPdfToPngScript(pythonPath: string, scriptPath: string, pdfPath: stri
 }
 
 // ============================================
+// Функция: Извлечение текста из PDF через PyMuPDF (без OCR)
+// ============================================
+async function extractTextFromPdfDirect(buffer: Buffer): Promise<{ success: boolean; text?: string; needsOcr: boolean }> {
+  const tempDir = path.join(process.cwd(), 'temp');
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const tempId = uuidv4();
+  const tempPdfPath = path.join(tempDir, `${tempId}.pdf`);
+  
+  try {
+    await fs.writeFile(tempPdfPath, buffer);
+    
+    const scriptPath = path.join(process.cwd(), 'python-scripts', 'pdf_extract_text.py');
+    const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+    
+    return new Promise((resolve) => {
+      const python = spawn(pythonExecutable, [scriptPath, tempPdfPath, '--min-chars', '50']);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      python.stdout.on('data', (data) => { stdout += data.toString(); });
+      python.stderr.on('data', (data) => { stderr += data.toString(); });
+      
+      python.on('close', async (code) => {
+        // Удаляем временный файл
+        try { await fs.unlink(tempPdfPath); } catch {}
+        
+        if (code !== 0) {
+          console.log('⚠️ PyMuPDF extraction failed, will use OCR');
+          resolve({ success: false, needsOcr: true });
+          return;
+        }
+        
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.success && !result.needs_ocr && result.text) {
+            console.log(`✅ PyMuPDF извлёк ${result.char_count} символов напрямую (без OCR)`);
+            resolve({ success: true, text: result.text, needsOcr: false });
+          } else {
+            console.log(`📄 PDF требует OCR: ${result.reason || 'нет текстового слоя'}`);
+            resolve({ success: true, needsOcr: true });
+          }
+        } catch {
+          resolve({ success: false, needsOcr: true });
+        }
+      });
+      
+      python.on('error', () => {
+        resolve({ success: false, needsOcr: true });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Ошибка извлечения текста из PDF:', error);
+    return { success: false, needsOcr: true };
+  }
+}
+
+// ============================================
 // Функция: OCR через Google Vision
 // ============================================
 async function extractTextFromImage(buffer: Buffer, isPdf: boolean = false): Promise<string> {
   try {
-    // Если это PDF, сначала конвертируем в изображение
+    // Если это PDF, сначала пробуем извлечь текст напрямую (без OCR)
     if (isPdf) {
-      console.log('📄 Конвертация PDF в изображение...');
+      console.log('📄 Пробуем извлечь текст из PDF напрямую (PyMuPDF)...');
+      const directResult = await extractTextFromPdfDirect(buffer);
+      
+      // Если текст успешно извлечён — возвращаем его (OCR не нужен!)
+      if (directResult.success && !directResult.needsOcr && directResult.text) {
+        console.log('✅ Текст извлечён из PDF напрямую — OCR не потребовался!');
+        return directResult.text;
+      }
+      
+      // Если текста нет или его мало — используем OCR
+      console.log('📄 Текстового слоя нет, конвертируем PDF в изображение для OCR...');
       const pdfResult = await convertPdfToImages(buffer);
       
       // Обрабатываем все страницы через OCR
@@ -435,7 +504,7 @@ async function extractTextFromImage(buffer: Buffer, isPdf: boolean = false): Pro
       return fullText;
     }
     
-    // Обычное изображение
+    // Обычное изображение — всегда OCR
     const [result] = await vision.textDetection({
       image: { content: buffer },
     });
@@ -704,7 +773,84 @@ export async function POST(request: NextRequest) {
       parsed.supplier_inn
     );
     
-    // Шаг 6: Создаем счет в БД
+    // Шаг 6: Проверяем возможные дубликаты (по совпадению 2+ характеристик из 4)
+    // Характеристики: номер счёта, поставщик, сумма, дата
+    let possibleDuplicates: any[] = [];
+    
+    if (parsed.invoice_number && parsed.invoice_number !== 'Не распознан') {
+      console.log(`🔍 Поиск возможных дубликатов...`);
+      
+      // Оптимизированный поиск: ищем только по номеру счёта или поставщику
+      let query = supabase
+        .from('invoices')
+        .select('id, invoice_number, invoice_date, total_amount, supplier_id, file_url, suppliers(name)');
+      
+      // Добавляем фильтры для сужения поиска
+      if (supplierId) {
+        // Ищем счета с таким же номером ИЛИ поставщиком
+        query = query.or(`invoice_number.eq.${parsed.invoice_number},supplier_id.eq.${supplierId}`);
+      } else {
+        // Только по номеру счёта
+        query = query.eq('invoice_number', parsed.invoice_number);
+      }
+      
+      const { data: candidates } = await query.limit(50);
+      
+      if (candidates && candidates.length > 0) {
+        for (const candidate of candidates) {
+          let matchCount = 0;
+          const matches: string[] = [];
+          
+          // Проверка 1: Номер счёта
+          if (candidate.invoice_number === parsed.invoice_number) {
+            matchCount++;
+            matches.push('номер');
+          }
+          
+          // Проверка 2: Поставщик
+          if (supplierId && candidate.supplier_id === supplierId) {
+            matchCount++;
+            matches.push('поставщик');
+          }
+          
+          // Проверка 3: Сумма (с погрешностью 1%)
+          if (parsed.total_amount && candidate.total_amount) {
+            const diff = Math.abs(candidate.total_amount - parsed.total_amount);
+            const tolerance = parsed.total_amount * 0.01;
+            if (diff <= tolerance) {
+              matchCount++;
+              matches.push('сумма');
+            }
+          }
+          
+          // Проверка 4: Дата
+          if (parsed.invoice_date && candidate.invoice_date === parsed.invoice_date) {
+            matchCount++;
+            matches.push('дата');
+          }
+          
+          // Если совпадают 2+ характеристики — это возможный дубликат
+          if (matchCount >= 2) {
+            possibleDuplicates.push({
+              id: candidate.id,
+              invoice_number: candidate.invoice_number,
+              invoice_date: candidate.invoice_date,
+              total_amount: candidate.total_amount,
+              supplier_name: (candidate.suppliers as any)?.name || 'Неизвестный',
+              file_url: candidate.file_url,
+              match_count: matchCount,
+              matches: matches
+            });
+          }
+        }
+        
+        if (possibleDuplicates.length > 0) {
+          console.log(`⚠️ Найдено ${possibleDuplicates.length} возможных дубликатов`);
+        }
+      }
+    }
+    
+    // Шаг 7: Создаем счет в БД (всегда создаём, но помечаем если есть дубликаты)
     const newInvoice: CreateInvoice = {
       supplier_id: supplierId || undefined,
       invoice_number: parsed.invoice_number || 'Не распознан',
@@ -721,7 +867,7 @@ export async function POST(request: NextRequest) {
     
     console.log('📦 Данные счета для вставки:', JSON.stringify(newInvoice, null, 2));
     
-    // Повторные попытки создания счета в БД
+    // Повторные попытки создания счета в БД (Шаг 8)
     let invoice = null;
     let lastError = null;
     const maxDbRetries = 3;
@@ -776,31 +922,44 @@ export async function POST(request: NextRequest) {
     
     // Отправка уведомления через n8n (асинхронно, не блокируем ответ)
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
-    if (n8nWebhookUrl && parsed) {
+    if (n8nWebhookUrl) {
+      // Плоская структура для простоты использования в n8n
+      const webhookData = {
+        type: 'invoice_created',
+        id: invoice.id,
+        number: parsed?.invoice_number || invoice.invoice_number || '',
+        date: parsed?.invoice_date || invoice.invoice_date || '',
+        total_amount: parsed?.total_amount || invoice.total_amount || 0,
+        supplier_name: parsed?.supplier_name || '',
+        supplier_inn: parsed?.supplier_inn || '',
+        project_id: projectId || null,
+        file_url: invoice.file_url || '',
+        timestamp: new Date().toISOString(),
+      };
+      console.log(`📧 Отправка в n8n:`, JSON.stringify(webhookData));
+      
       fetch(n8nWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'invoice_created',
-          invoice: {
-            id: invoice.id,
-            number: parsed.invoice_number,
-            date: parsed.invoice_date,
-            total_amount: parsed.total_amount,
-            supplier_name: parsed.supplier_name,
-            supplier_inn: parsed.supplier_inn,
-          },
-          project_id: projectId,
-          timestamp: new Date().toISOString(),
-        }),
+        body: JSON.stringify(webhookData),
       }).catch(err => console.error('⚠️ n8n webhook error:', err));
     }
     
-    return NextResponse.json({
+    // Формируем ответ с информацией о дубликатах
+    const response: any = {
       success: true,
       invoice,
       parsed,
-    });
+    };
+    
+    // Если есть возможные дубликаты — добавляем их в ответ
+    if (possibleDuplicates.length > 0) {
+      response.possible_duplicates = possibleDuplicates;
+      response.is_possible_duplicate = true;
+      console.log(`⚠️ [${requestId}] Счёт создан, но найдено ${possibleDuplicates.length} возможных дубликатов`);
+    }
+    
+    return NextResponse.json(response);
     
   } catch (error) {
     console.error(`❌ [${requestId}] Ошибка:`, error);

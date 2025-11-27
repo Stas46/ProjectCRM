@@ -67,6 +67,11 @@ migration-*.sql
 setup-*.sql
 fix-*.sql
 
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
 # Документация разработки
 FIX-INSTRUCTIONS.md
 PROJECTS_README.md

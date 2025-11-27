@@ -148,12 +148,11 @@ export default function SimpleInvoiceUpload({ projectId, onInvoiceAdded, onClose
       body: formData,
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Ошибка сервера: ${errorData}`);
-    }
-
     const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || `Ошибка сервера: ${response.status}`);
+    }
     
     if (result.error) {
       throw new Error(result.error);
@@ -161,29 +160,37 @@ export default function SimpleInvoiceUpload({ projectId, onInvoiceAdded, onClose
 
     // Получаем данные из правильной структуры
     const invoiceData = result.data || result;
-    const invoice = invoiceData.invoice || {};
+    const invoice = invoiceData.invoice || result.invoice || {};
+    const parsed = result.parsed || {};
     const contractor = invoiceData.contractor || {};
 
     // Создаем новый счет с распознанными данными
-    const supplierName = contractor.name || 'НЕТ_ПОСТАВЩИКА';
-    const supplierInn = contractor.inn || '';
+    const supplierName = contractor.name || parsed.supplier_name || invoice.supplier_name || 'НЕТ_ПОСТАВЩИКА';
+    const supplierInn = contractor.inn || parsed.supplier_inn || '';
     const category = await getCategoryBySupplierName(supplierName, supplierInn);
     const categoryName = expenseCategoryMap[category] || category;
     
-    const newInvoice = {
-      id: crypto.randomUUID(),
-      invoice_number: invoice.number || 'НЕТ_НОМЕРА',
-      issue_date: invoice.date || new Date().toISOString().split('T')[0],
+    const newInvoice: any = {
+      id: invoice.id || crypto.randomUUID(),
+      invoice_number: invoice.invoice_number || parsed.invoice_number || 'НЕТ_НОМЕРА',
+      issue_date: invoice.invoice_date || parsed.invoice_date || new Date().toISOString().split('T')[0],
       due_date: invoice.due_date || '',
       supplier: supplierName,
-      supplier_inn: contractor.inn || '',
-      total_amount: invoice.total_amount || 0,
-      vat_amount: invoice.vat_amount || 0,
-      vat_rate: invoice.vat_rate || 20,
-      has_vat: invoice.has_vat || false,
+      supplier_inn: supplierInn,
+      total_amount: invoice.total_amount || parsed.total_amount || 0,
+      vat_amount: invoice.vat_amount || parsed.vat_amount || 0,
+      vat_rate: 20,
+      has_vat: (invoice.vat_amount || parsed.vat_amount) > 0,
       category: categoryName,
       original_file_name: file.name,
     };
+
+    // Если есть возможные дубликаты — добавляем информацию
+    if (result.is_possible_duplicate && result.possible_duplicates) {
+      newInvoice.is_possible_duplicate = true;
+      newInvoice.possible_duplicates = result.possible_duplicates;
+      console.log('⚠️ [Upload] Обнаружены возможные дубликаты:', result.possible_duplicates.length);
+    }
 
     return newInvoice;
   };
@@ -262,7 +269,9 @@ export default function SimpleInvoiceUpload({ projectId, onInvoiceAdded, onClose
           </div>
           <div className="max-h-40 overflow-y-auto space-y-2">
             {fileQueue.map((item) => (
-              <div key={item.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+              <div key={item.id} className={`flex items-center justify-between rounded-lg p-3 ${
+                item.result?.is_possible_duplicate ? 'bg-yellow-50 border border-yellow-300' : 'bg-gray-50'
+              }`}>
                 <div className="flex items-center space-x-3">
                   {item.status === 'waiting' && (
                     <div className="w-4 h-4 rounded-full bg-gray-300 animate-pulse"></div>
@@ -270,8 +279,11 @@ export default function SimpleInvoiceUpload({ projectId, onInvoiceAdded, onClose
                   {item.status === 'processing' && (
                     <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                   )}
-                  {item.status === 'completed' && (
+                  {item.status === 'completed' && !item.result?.is_possible_duplicate && (
                     <CheckCircle className="w-4 h-4 text-green-600" />
+                  )}
+                  {item.status === 'completed' && item.result?.is_possible_duplicate && (
+                    <AlertCircle className="w-4 h-4 text-yellow-600" />
                   )}
                   {item.status === 'error' && (
                     <AlertCircle className="w-4 h-4 text-red-600" />
@@ -283,9 +295,24 @@ export default function SimpleInvoiceUpload({ projectId, onInvoiceAdded, onClose
                     <p className="text-xs text-gray-500">
                       {item.status === 'waiting' && 'Ожидание...'}
                       {item.status === 'processing' && 'Обработка...'}
-                      {item.status === 'completed' && 'Завершено'}
+                      {item.status === 'completed' && !item.result?.is_possible_duplicate && 'Завершено ✓'}
+                      {item.status === 'completed' && item.result?.is_possible_duplicate && (
+                        <span className="text-yellow-700">
+                          ⚠️ Возможный дубликат ({item.result.possible_duplicates?.length} совпадений)
+                        </span>
+                      )}
                       {item.status === 'error' && `Ошибка: ${item.error}`}
                     </p>
+                    {/* Показываем детали дубликатов */}
+                    {item.result?.is_possible_duplicate && item.result.possible_duplicates?.length > 0 && (
+                      <div className="mt-1 text-xs text-yellow-700">
+                        {item.result.possible_duplicates.slice(0, 2).map((dup: any, idx: number) => (
+                          <div key={idx}>
+                            #{dup.invoice_number} от {dup.invoice_date} — совпадает: {dup.matches?.join(', ')}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {item.status !== 'processing' && (

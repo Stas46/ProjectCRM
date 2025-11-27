@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, ArrowLeft, Edit, Plus, CheckCircle2, Circle, FileText, X, Upload, ChevronDown, ChevronRight, AlertTriangle, Check, RefreshCw } from 'lucide-react';
 import { expenseCategoryMap, SupplierCategory } from '@/types/supplier';
 import { ProjectFileManager } from '@/components/ProjectFileManager-v3';
 
@@ -41,6 +41,20 @@ interface Invoice {
     name: string;
     category: string;
   };
+}
+
+// Информация о возможном дубликате
+interface DuplicateInfo {
+  invoice_id: string;
+  duplicates: {
+    id: string;
+    invoice_number: string;
+    invoice_date: string;
+    total_amount: number;
+    supplier_name: string;
+    file_url: string;
+    matches: string[];
+  }[];
 }
 
 const statusColors = {
@@ -139,6 +153,9 @@ export default function ProjectDetailPage() {
   
   // Drag and drop для счетов
   const [draggedInvoice, setDraggedInvoice] = useState<Invoice | null>(null);
+  
+  // Информация о дубликатах (ключ = ID нового счёта)
+  const [duplicateWarnings, setDuplicateWarnings] = useState<Map<string, DuplicateInfo>>(new Map());
 
   useEffect(() => {
     loadProjectData();
@@ -578,6 +595,11 @@ export default function ProjectDetailPage() {
       setUploading(true);
       setUploadProgress(`Загрузка ${files.length} файлов...`);
 
+      let successCount = 0;
+      let errorCount = 0;
+      let duplicateCount = 0;
+      const newDuplicates = new Map<string, DuplicateInfo>();
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         setUploadProgress(`Обработка ${i + 1} из ${files.length}: ${file.name}`);
@@ -586,24 +608,52 @@ export default function ProjectDetailPage() {
         formData.append('file', file);
         formData.append('project_id', projectId as string);
 
-        const response = await fetch('/api/smart-invoice', {
-          method: 'POST',
-          body: formData,
-        });
+        try {
+          const response = await fetch('/api/smart-invoice', {
+            method: 'POST',
+            body: formData,
+          });
 
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`Ошибка обработки ${file.name}: ${error}`);
+          if (!response.ok) {
+            const error = await response.text();
+            console.error(`❌ Ошибка ${file.name}:`, error);
+            errorCount++;
+            continue;
+          }
+
+          const responseData = await response.json();
+          console.log(`✅ Счёт ${file.name} обработан:`, responseData);
+          successCount++;
+
+          // Проверяем на дубликаты
+          if (responseData.is_possible_duplicate && responseData.possible_duplicates?.length > 0 && responseData.invoice?.id) {
+            duplicateCount++;
+            newDuplicates.set(responseData.invoice.id, {
+              invoice_id: responseData.invoice.id,
+              duplicates: responseData.possible_duplicates,
+            });
+          }
+        } catch (fileErr) {
+          console.error(`❌ Ошибка ${file.name}:`, fileErr);
+          errorCount++;
         }
-
-        const result = await response.json();
-        console.log(`✅ Счёт ${file.name} обработан:`, result);
       }
 
-      setUploadProgress('Все файлы успешно загружены!');
+      let statusMessage = `Загружено: ${successCount}`;
+      if (errorCount > 0) statusMessage += `, ошибок: ${errorCount}`;
+      if (duplicateCount > 0) statusMessage += `, ⚠️ дубликатов: ${duplicateCount}`;
+
+      setUploadProgress(statusMessage);
       setTimeout(() => {
         setUploadProgress('');
         setUploading(false);
+        if (newDuplicates.size > 0) {
+          setDuplicateWarnings(prev => {
+            const updated = new Map(prev);
+            newDuplicates.forEach((value, key) => updated.set(key, value));
+            return updated;
+          });
+        }
       }, 2000);
 
       await loadProjectData();
@@ -620,6 +670,44 @@ export default function ProjectDetailPage() {
       setSelectedInvoices(new Set());
     } else {
       setSelectedInvoices(new Set(invoices.map(inv => inv.id)));
+    }
+  };
+
+  // Действия с дубликатами
+  const handleDuplicateAction = async (invoiceId: string, action: 'delete' | 'update' | 'keep') => {
+    const duplicateInfo = duplicateWarnings.get(invoiceId);
+    if (!duplicateInfo) return;
+    
+    const { supabase } = await import('@/lib/supabase');
+    
+    try {
+      if (action === 'delete') {
+        // Удалить новый счёт (текущий)
+        const { error } = await supabase.from('invoices').delete().eq('id', invoiceId);
+        if (error) throw error;
+        console.log(`🗑️ Удалён новый счёт ${invoiceId}`);
+      } else if (action === 'update') {
+        // Удалить все старые дубликаты
+        for (const dup of duplicateInfo.duplicates) {
+          const { error } = await supabase.from('invoices').delete().eq('id', dup.id);
+          if (error) throw error;
+          console.log(`🗑️ Удалён старый дубликат ${dup.id}`);
+        }
+      }
+      // action === 'keep' — ничего не делаем, просто убираем предупреждение
+      
+      // Убираем предупреждение о дубликате
+      setDuplicateWarnings(prev => {
+        const updated = new Map(prev);
+        updated.delete(invoiceId);
+        return updated;
+      });
+      
+      // Перезагружаем список счетов
+      await loadProjectData();
+    } catch (err) {
+      console.error('Ошибка при обработке дубликата:', err);
+      alert('Ошибка при обработке дубликата');
     }
   };
 
@@ -1373,17 +1461,21 @@ export default function ProjectDetailPage() {
                   </div>
                   
                   {/* Строки счетов */}
-                  {filteredInvoices.map(invoice => (
+                  {filteredInvoices.map(invoice => {
+                    const dupInfo = duplicateWarnings.get(invoice.id);
+                    return (
+                    <React.Fragment key={invoice.id}>
                     <div 
-                      key={invoice.id}
                       draggable
                       onDragStart={() => setDraggedInvoice(invoice)}
                       onDragEnd={() => setDraggedInvoice(null)}
                       className={`px-3 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors cursor-move ${
+                        dupInfo ? 'bg-yellow-50 border-l-4 border-yellow-400' :
                         selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
                       <div className="col-span-1 flex items-center">
+                        {dupInfo && <AlertTriangle className="w-4 h-4 text-yellow-600 mr-1" />}
                         <input
                           type="checkbox"
                           checked={selectedInvoices.has(invoice.id)}
@@ -1446,18 +1538,71 @@ export default function ProjectDetailPage() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    {/* Строка предупреждения о дубликате */}
+                    {dupInfo && (
+                      <div className="bg-yellow-50 px-4 py-3 border-b">
+                        <div className="flex flex-col md:flex-row md:items-center gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 text-yellow-800 font-medium text-sm">
+                              <AlertTriangle className="w-4 h-4" />
+                              Возможный дубликат!
+                            </div>
+                            <div className="text-xs text-yellow-700 mt-1">
+                              Совпадает со счётом #{dupInfo.duplicates[0]?.invoice_number} от {' '}
+                              {dupInfo.duplicates[0]?.invoice_date && new Date(dupInfo.duplicates[0].invoice_date).toLocaleDateString('ru-RU')}
+                              {' '}({dupInfo.duplicates[0]?.matches?.join(', ')})
+                              {dupInfo.duplicates[0]?.file_url && (
+                                <a href={dupInfo.duplicates[0].file_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 hover:underline">
+                                  📎 Открыть оригинал
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'delete')}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                              title="Удалить новый счёт"
+                            >
+                              <X className="w-3 h-3" />
+                              Удалить новый
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'update')}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                              title="Заменить старый"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Заменить старый
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'keep')}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                              title="Оставить оба"
+                            >
+                              <Check className="w-3 h-3" />
+                              Оставить оба
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    </React.Fragment>
+                  ); })}
                   </div>
 
                   {/* Мобильные карточки - показаны только на мобильных */}
                   <div className="md:hidden divide-y">
-                    {filteredInvoices.map(invoice => (
+                    {filteredInvoices.map(invoice => {
+                      const dupInfo = duplicateWarnings.get(invoice.id);
+                      return (
+                      <React.Fragment key={invoice.id}>
                       <div 
-                        key={invoice.id}
                         draggable
                         onDragStart={() => setDraggedInvoice(invoice)}
                         onDragEnd={() => setDraggedInvoice(null)}
                         className={`p-4 transition-colors cursor-move ${
+                          dupInfo ? 'bg-yellow-50 border-l-4 border-yellow-400' :
                           selectedInvoices.has(invoice.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                         }`}
                       >
@@ -1470,6 +1615,7 @@ export default function ProjectDetailPage() {
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start gap-2 mb-2">
+                              {dupInfo && <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />}
                               <FileText className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                               <div className="flex-1">
                                 <div className="font-semibold text-gray-900 text-base mb-1">{invoice.invoice_number}</div>
@@ -1529,7 +1675,44 @@ export default function ProjectDetailPage() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                      {/* Предупреждение о дубликате на мобильных */}
+                      {dupInfo && (
+                        <div className="bg-yellow-50 px-4 py-3 border-b">
+                          <div className="flex items-center gap-2 text-yellow-800 font-medium text-sm mb-2">
+                            <AlertTriangle className="w-4 h-4" />
+                            Возможный дубликат!
+                          </div>
+                          <div className="text-xs text-yellow-700 mb-3">
+                            Совпадает со счётом #{dupInfo.duplicates[0]?.invoice_number} от {' '}
+                            {dupInfo.duplicates[0]?.invoice_date && new Date(dupInfo.duplicates[0].invoice_date).toLocaleDateString('ru-RU')}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'delete')}
+                              className="flex items-center gap-1 px-3 py-2 text-xs bg-red-100 text-red-700 rounded-lg"
+                            >
+                              <X className="w-3 h-3" />
+                              Удалить новый
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'update')}
+                              className="flex items-center gap-1 px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded-lg"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Заменить старый
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateAction(invoice.id, 'keep')}
+                              className="flex items-center gap-1 px-3 py-2 text-xs bg-green-100 text-green-700 rounded-lg"
+                            >
+                              <Check className="w-3 h-3" />
+                              Оставить оба
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      </React.Fragment>
+                    ); })}
                   </div>
                 </>
               )}

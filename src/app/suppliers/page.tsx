@@ -16,6 +16,7 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [editingSupplier, setEditingSupplier] = useState<SupplierWithStats | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [editData, setEditData] = useState({
     name: '',
     inn: ''
@@ -88,8 +89,9 @@ export default function SuppliersPage() {
   }
 
   async function saveSupplierEdit() {
-    if (!editingSupplier) return;
+    if (!editingSupplier || isSaving) return;
 
+    setIsSaving(true);
     try {
       const { error } = await supabase
         .from('suppliers')
@@ -110,10 +112,12 @@ export default function SuppliersPage() {
       );
 
       setEditingSupplier(null);
-      alert('Поставщик обновлен');
+      setEditData({ name: '', inn: '' });
     } catch (error) {
       console.error('Ошибка:', error);
       alert('Ошибка при сохранении');
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -373,8 +377,12 @@ export default function SuppliersPage() {
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Редактировать поставщика</h3>
               <button
-                onClick={() => setEditingSupplier(null)}
-                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600"
+                onClick={() => {
+                  setEditingSupplier(null);
+                  setEditData({ name: '', inn: '' });
+                }}
+                disabled={isSaving}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -416,18 +424,31 @@ export default function SuppliersPage() {
 
             <div className="flex gap-2 p-4 border-t bg-gray-50">
               <button
-                onClick={() => setEditingSupplier(null)}
-                className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100 min-h-[44px]"
+                onClick={() => {
+                  setEditingSupplier(null);
+                  setEditData({ name: '', inn: '' });
+                }}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-100 min-h-[44px] disabled:opacity-50"
               >
                 Отмена
               </button>
               <button
                 onClick={saveSupplierEdit}
-                disabled={!editData.name.trim()}
+                disabled={!editData.name.trim() || isSaving}
                 className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
               >
-                <Save className="w-4 h-4" />
-                Сохранить
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Сохранение...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Сохранить
+                  </>
+                )}
               </button>
             </div>
           </div>

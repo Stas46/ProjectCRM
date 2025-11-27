@@ -43,6 +43,10 @@ class UltimateInvoiceParser:
     def extract_invoice_number(self, text: str) -> Optional[str]:
         """Извлекает номер счета"""
         patterns = [
+            # СПЕЦИФИКАЦИЯ (АЛЮТЕХ и др.) - САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ!
+            r'СПЕЦИФИКАЦИЯ\s*№\s*(\d+)',
+            r'Спецификация\s*№\s*(\d+)',
+            
             # Буквенно-цифровые номера (УТ-784, А-123, и т.д.) - ВЫСОКИЙ ПРИОРИТЕТ!
             r'№\s*([А-ЯЁA-Z]+-\d+)',  
             r'№\s*([ABCDEFGHIJKLMNOPQRSTUVWXYZАВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ]+-\d+)',
@@ -137,12 +141,6 @@ class UltimateInvoiceParser:
                 groups = match.groups()
                 if len(groups) == 3:
                     day, month, year = groups
-
-                    # Исправляем год: если указан 2025, заменяем на 2024
-                    if year == "2025":
-                        year = "2024"
-                        if self.debug:
-                            print(f"Исправлен год с 2025 на 2024")
 
                     # Если месяц - название на русском
                     if month.lower() in self.russian_months:
