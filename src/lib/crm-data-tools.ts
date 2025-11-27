@@ -881,9 +881,9 @@ export async function getInvoicesAnalytics(
         total_amount: totalAmount,
         paid_amount: paidAmount,
         unpaid_amount: unpaidAmount,
-        by_category: Object.values(byCategory),
-        by_supplier: Object.values(bySupplier),
-        by_month: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
+        by_category: Object.values(byCategory) as Array<{ category: string; total: number; count: number }>,
+        by_supplier: Object.values(bySupplier) as Array<{ supplier: string; total: number; count: number }>,
+        by_month: (Object.values(byMonth) as Array<{ month: string; total: number; count: number }>).sort((a, b) => a.month.localeCompare(b.month)),
         top_suppliers: topSuppliers,
         summary
       },
