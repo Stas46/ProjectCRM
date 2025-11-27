@@ -33,7 +33,7 @@ import {
   getUserInvoices,
   getFullProjectInfo,
   createTask,
-  updateTaskStatus,
+  updateTask,
   searchAllData
 } from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
