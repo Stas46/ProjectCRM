@@ -12,7 +12,7 @@ const supabase = createClient(
 export interface AgentLogEntry {
   userId: string;
   sessionId?: string;
-  agentType: 'data_agent' | 'assistant_agent' | 'crm_tools';
+  agentType: 'data_agent' | 'assistant_agent' | 'crm_tools' | 'personal_assistant';
   actionType: string;
   inputData?: any;
   outputData?: any;

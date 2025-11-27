@@ -701,7 +701,7 @@ async function fetchDataBasedOnIntent(
         result += `📋 Название: ${proj.project_name || proj.title}\n`;
         result += `🏢 Клиент: ${proj.client_name || 'Не указан'}\n`;
         result += `📊 Статус: ${proj.status}\n`;
-        result += `🎯 Приоритет: ${proj.priority === 1 ? '🔴 Высокий' : proj.priority === 2 ? '🟡 Средний' : '🟢 Низкий'}\n`;
+        result += `🎯 Приоритет: ${(proj.priority ?? 'low') === 'high' ? '🔴 Высокий' : (proj.priority ?? 'low') === 'medium' ? '🟡 Средний' : '🟢 Низкий'}\n`;
         if (proj.deadline) result += `📅 Срок: ${new Date(proj.deadline).toLocaleDateString('ru-RU')}\n`;
         result += `\n💰 БЮДЖЕТ:\n`;
         result += fullInfo.budget_stats ? 
