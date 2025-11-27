@@ -59,6 +59,28 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 4. Запоминаешь важную информацию о пользователе
 5. Проактивно спрашиваешь и напоминаешь о важном
 
+РАСПОЗНАВАНИЕ ЗАПРОСОВ - КЛЮЧЕВЫЕ СЛОВА:
+
+**CRM (всегда используй get_tasks/get_projects/get_invoices):**
+- "какие проекты", "покажи проекты", "мои проекты", "список проектов" → get_projects
+- "какие задачи", "покажи задачи", "мои задачи", "что делать" → get_tasks
+- "какие счета", "покажи счета", "счета", "инвойсы" → get_invoices
+- "найди [что-то]" → search_data
+
+**Погода (всегда используй get_weather):**
+- "какая погода", "погода", "температура", "на улице" → get_weather
+
+**ЗАПРЕЩЕНО использовать ask_question для:**
+- ❌ "какие проекты?" → get_projects (НЕ ask_question!)
+- ❌ "какие задачи?" → get_tasks (НЕ ask_question!)
+- ❌ "какая погода?" → get_weather (НЕ ask_question!)
+- ❌ Любые прямые вопросы про CRM данные
+
+**ask_question используй ТОЛЬКО когда:**
+- ✅ Нужна недостающая информация: "где работает жена?", "когда ДР?"
+- ✅ Проактивное предложение: "хочешь автоматическое утро?"
+- ✅ Уточнение некорректного запроса пользователя
+
 ДОСТУПНЫЕ ДЕЙСТВИЯ:
 
 **Рабочие (CRM):**
@@ -117,8 +139,38 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "memory_to_save": {"key": "value"} (что запомнить)
 }
 
-ПРИМЕРЫ ПРОАКТИВНЫХ ДИАЛОГОВ:
+ПРИМЕРЫ ДИАЛОГОВ:
 
+**CRM запросы:**
+👤: какие у меня проекты?
+🤖: {
+  "action": "get_projects",
+  "filters": {},
+  "reasoning": "Пользователь спрашивает про проекты - показываю список из CRM"
+}
+
+👤: какие задачи?
+🤖: {
+  "action": "get_tasks",
+  "filters": {},
+  "reasoning": "Показать задачи пользователя"
+}
+
+👤: покажи счета
+🤖: {
+  "action": "get_invoices",
+  "filters": {},
+  "reasoning": "Показать счета из CRM"
+}
+
+👤: найди проект школа
+🤖: {
+  "action": "search_data",
+  "data": { "query": "школа" },
+  "reasoning": "Поиск по ключевому слову 'школа' в CRM"
+}
+
+**Проактивные вопросы:**
 👤: Завтра еду к жене на работу
 🤖: {
   "action": "ask_question",
@@ -139,6 +191,7 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "reasoning": "Пользователь упомянул дочку, но её нет в базе семьи"
 }
 
+**Погода и маршруты:**
 👤: Какая погода?
 🤖: {
   "action": "get_weather",
@@ -150,6 +203,7 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   }
 }
 
+**Сохранение информации:**
 👤: Санкт-Петербург, Ленина 10
 🤖: {
   "action": "save_preference",
@@ -246,20 +300,31 @@ async function analyzePersonalIntent(
         { role: 'system', content: PERSONAL_ASSISTANT_SYSTEM_PROMPT },
         { role: 'user', content: userMessage + contextMessage }
       ],
-      temperature: 0.4,
-      max_tokens: 800
+      temperature: 0.6,
+      max_tokens: 1000
     });
 
     const content = response.choices[0].message.content || '{}';
-    consoleLog('info', 'AI Response', { content });
+    consoleLog('info', '🤖 AI Raw Response:', { 
+      userMessage,
+      rawContent: content,
+      contentLength: content.length 
+    });
 
     // Парсим JSON
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      consoleLog('error', '❌ No JSON found in AI response', { content });
       throw new Error('AI did not return valid JSON');
     }
 
     const intent: PersonalAssistantRequest = JSON.parse(jsonMatch[0]);
+    consoleLog('info', '✅ Parsed intent:', { 
+      action: intent.action,
+      reasoning: intent.reasoning,
+      hasData: !!intent.data,
+      hasFilters: !!intent.filters
+    });
     
     await log.finish({ outputData: intent, status: 'success' });
     return intent;
@@ -295,12 +360,20 @@ async function executePersonalAction(
       case 'get_weather': {
         const { data: profile } = await getUserProfile(userId);
         
+        let lat, lon;
+        let locationNote = '';
+        
         if (!profile?.home_coordinates) {
-          result = '❓ Я не знаю где ты находишься. Скажи свой адрес или город, и я покажу погоду.';
-          break;
+          // Fallback на Санкт-Петербург если нет профиля
+          lat = 59.9311;
+          lon = 30.3609;
+          locationNote = '\n\n💡 Показываю погоду для Санкт-Петербурга. Скажи свой адрес, чтобы я показывал погоду для твоего города.';
+          consoleLog('info', '⚠️ No user coordinates, using St. Petersburg fallback');
+        } else {
+          lat = profile.home_coordinates.lat;
+          lon = profile.home_coordinates.lon;
         }
 
-        const { lat, lon } = profile.home_coordinates;
         const { data: weather, error } = await getWeather(lat, lon);
 
         if (error || !weather) {
@@ -308,7 +381,7 @@ async function executePersonalAction(
           break;
         }
 
-        result = formatWeatherForAI(weather);
+        result = formatWeatherForAI(weather) + locationNote;
         result += '\n\n💡 ' + getClothingAdvice(weather);
         
         // Сохраняем в память что спросил погоду
