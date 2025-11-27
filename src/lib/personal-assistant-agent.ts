@@ -645,8 +645,6 @@ async function executePersonalAction(
         }
         break;
       }
-        break;
-      }
 
       // ========== CRM: СОЗДАТЬ ЗАДАЧУ ==========
       case 'create_task': {
