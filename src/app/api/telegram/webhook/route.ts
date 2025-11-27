@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { runDataAgent } from '@/lib/data-agent';
+import { runPersonalAssistant } from '@/lib/personal-assistant-agent';
 import {
   sendTelegramMessage,
   getUserIdByTelegramId,
@@ -163,53 +164,28 @@ export async function POST(req: NextRequest) {
       const { data: dataResponse } = await runDataAgent(userId, text);
       finalResponse = dataResponse || 'Нет данных в CRM по вашему запросу.';
     }
-    // Гибридный режим - сначала CRM, потом AI
+    // Гибридный режим - Personal Assistant (CRM + личное + погода)
     else {
-      const { data: dataResponse, intent } = await runDataAgent(userId, text);
-      
-      // Если Data Agent нашёл данные - форматируем их
-      if (dataResponse && dataResponse !== 'Нет данных') {
-        try {
-          const deepseekResponse = await fetch('https://api.deepseek.com/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: 'deepseek-chat',
-              messages: [
-                {
-                  role: 'system',
-                  content: `Ты личный ассистент в CRM системе для Telegram. 
-Отвечай кратко, дружелюбно и по-человечески.
-Используй эмодзи умеренно.
-Если нужно показать список - используй четкую структуру.
-Не повторяй вопрос пользователя.`
-                },
-                {
-                  role: 'user',
-                  content: `Пользователь спросил: "${text}"\n\nДанные из CRM:\n${dataResponse}\n\nСформулируй ответ в разговорном стиле на русском языке.`
-                }
-              ],
-              temperature: 0.7,
-              max_tokens: 500,
-            }),
-          });
-
-          const deepseekData = await deepseekResponse.json();
-          if (deepseekData.choices && deepseekData.choices[0]?.message?.content) {
-            finalResponse = deepseekData.choices[0].message.content;
-          } else {
-            finalResponse = dataResponse;
-          }
-        } catch (error) {
-          console.error('❌ DeepSeek formatting error:', error);
-          finalResponse = dataResponse;
+      try {
+        // Используем Personal Assistant который объединяет всё
+        const { data: assistantResponse } = await runPersonalAssistant(userId, text);
+        
+        if (assistantResponse && assistantResponse !== 'Нет данных') {
+          finalResponse = assistantResponse;
+        } else {
+          // Фоллбэк на обычный AI если ассистент не смог помочь
+          finalResponse = await getAIResponse(text);
         }
-      } else {
-        // Если CRM не нашёл данных - используем просто AI
-        finalResponse = await getAIResponse(text);
+      } catch (error) {
+        console.error('❌ Personal Assistant error:', error);
+        // Фоллбэк на старый Data Agent
+        const { data: dataResponse } = await runDataAgent(userId, text);
+        
+        if (dataResponse && dataResponse !== 'Нет данных') {
+          finalResponse = dataResponse;
+        } else {
+          finalResponse = await getAIResponse(text);
+        }
       }
     }
 
