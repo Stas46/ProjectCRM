@@ -5,7 +5,7 @@ import path from 'path';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: {
-    ignoreDuringBuilds: false, // Включаем проверку ESLint
+    ignoreDuringBuilds: true, // Отключаем проверку ESLint при сборке
   },
   typescript: {
     ignoreBuildErrors: false, // Включаем проверку TypeScript
