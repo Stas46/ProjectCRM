@@ -16,6 +16,9 @@ import {
   formatInvoicesForAI,
   parseDateRange,
   createTasksSummary,
+  getFullProjectInfo,
+  searchAllData,
+  getInvoicesAnalytics,
   type DataQueryFilters
 } from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
@@ -92,13 +95,16 @@ const DATA_AGENT_SYSTEM_PROMPT = `
 4. **get_budget** - показать бюджет проекта, расходы по категориям, остаток
 5. **create_task** - создать/добавить/напомнить задачу
 6. **update_task** - изменить/обновить/переместить задачу
+7. **get_full_project** - показать ВСЮ информацию о проекте (задачи, счета, бюджет, заметки)
+8. **search_data** - поиск по всем данным CRM (проекты, задачи, счета)
+9. **get_analytics** - аналитика по счетам (по категориям, поставщикам, месяцам)
 
 ВАЖНО: Если пользователь просит СОЗДАТЬ/ДОБАВИТЬ/НАПОМНИТЬ - используй create_task!
 Если ИЗМЕНИТЬ/ОБНОВИТЬ/ПЕРЕМЕСТИТЬ/ПОСТАВИТЬ ПРИОРИТЕТ - используй update_task!
 
 Формат ответа JSON:
 {
-  "action": "get_tasks" | "get_budget" | "create_task" | "update_task" | "get_projects" | "get_invoices" | "unknown",
+  "action": "get_tasks" | "get_budget" | "create_task" | "update_task" | "get_projects" | "get_invoices" | "get_full_project" | "search_data" | "get_analytics" | "unknown",
   "filters": {...},  // только для get_*
   "data": {...},     // для create_* и update_*
   "reasoning": "что понял",
@@ -114,6 +120,9 @@ const DATA_AGENT_SYSTEM_PROMPT = `
 5. "бюджет проекта" / "сколько осталось" → action: "get_budget"
 6. "что покупали у поставщика" - показывай category и items из счетов
 7. "саммари по задачам" / "итог" / "статус" → need_summary: true
+8. "все о проекте" / "полная информация" / "что по проекту" → action: "get_full_project"
+9. "найди" / "ищи" / "поиск" → action: "search_data"
+10. "аналитика по счетам" / "статистика" / "сколько потратили" → action: "get_analytics"
 
 УМНЫЙ ПОИСК ПО НАЗВАНИЯМ:
 - Используй ЧАСТИЧНОЕ совпадение: "южное" → найти все с "Южное шоссе"
@@ -177,11 +186,17 @@ const DATA_AGENT_SYSTEM_PROMPT = `
 
 "счета по этому проекту" → {"action": "get_invoices", "filters": {"project_id": "из контекста"}, "reasoning": "Используем проект из диалога"}
 
+"все о проекте школа" → {"action": "get_full_project", "filters": {"project_name": "школа"}, "reasoning": "Полная информация о проекте"}
+
+"найди информацию о профиле" → {"action": "search_data", "data": {"query": "профиль"}, "reasoning": "Поиск по всем данным"}
+
+"статистика по счетам за месяц" → {"action": "get_analytics", "filters": {"date_range": "месяц"}, "reasoning": "Аналитика счетов"}
+
 ВАЖНО: отвечай ТОЛЬКО валидным JSON.
 `.trim();
 
 export interface DataAgentRequest {
-  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' | 'create_task' | 'update_task' | 'unknown';
+  action: 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' | 'create_task' | 'update_task' | 'get_full_project' | 'search_data' | 'get_analytics' | 'unknown';
   filters?: DataQueryFilters & { date_range?: string; paid_status?: boolean };
   data?: {
     title?: string;
@@ -194,6 +209,8 @@ export interface DataAgentRequest {
     target?: 'last' | 'first' | string; // 'last', 'first', или ID задачи
     title_contains?: string; // поиск задачи по названию
     task_id?: string; // прямой ID задачи
+    // Для search_data
+    query?: string; // текст поиска
   };
   reasoning: string;
   context_project?: string; // Название проекта из контекста диалога
@@ -646,6 +663,99 @@ async function fetchDataBasedOnIntent(
           : 4;
         result = `✅ Задача обновлена:\n\nНазвание: ${updatedTask?.title}\nКвадрант: ${quadrantMap[quadrant]}`;
         consoleLog('success', 'Task updated', { taskId: updatedTask?.id });
+        break;
+      }
+
+      case 'get_full_project': {
+        // Найти проект сначала
+        let projectId = intent.filters?.project_id;
+        
+        if (!projectId || !isUUID(projectId)) {
+          const projectName = intent.filters?.project_name || intent.filters?.project_id || '';
+          consoleLog('info', 'Searching project for full info', { projectName });
+          
+          const { data: projects } = await getUserProjects(userId, { 
+            project_name: projectName,
+            limit: 1 
+          });
+          
+          if (!projects || projects.length === 0) {
+            result = `Проект "${projectName}" не найден.`;
+            await log.finish({ outputData: { error: 'Project not found' }, status: 'warning' });
+            return result;
+          }
+          
+          projectId = projects[0].id;
+        }
+        
+        const { data: fullInfo, error } = await getFullProjectInfo(userId, projectId);
+        
+        if (error || !fullInfo) {
+          result = `Ошибка получения информации о проекте: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error || 'Unknown' });
+          return result;
+        }
+        
+        const proj = fullInfo.project;
+        result = `🏗️ ПОЛНАЯ ИНФОРМАЦИЯ О ПРОЕКТЕ\n\n`;
+        result += `📋 Название: ${proj.project_name || proj.title}\n`;
+        result += `🏢 Клиент: ${proj.client_name || 'Не указан'}\n`;
+        result += `📊 Статус: ${proj.status}\n`;
+        result += `🎯 Приоритет: ${proj.priority === 1 ? '🔴 Высокий' : proj.priority === 2 ? '🟡 Средний' : '🟢 Низкий'}\n`;
+        if (proj.deadline) result += `📅 Срок: ${new Date(proj.deadline).toLocaleDateString('ru-RU')}\n`;
+        result += `\n💰 БЮДЖЕТ:\n`;
+        result += fullInfo.budget_stats ? 
+          `Бюджет: ${fullInfo.budget_stats.budget?.toLocaleString('ru-RU')} ₽\nПотрачено: ${fullInfo.budget_stats.spent?.toLocaleString('ru-RU')} ₽\nОстаток: ${fullInfo.budget_stats.remaining?.toLocaleString('ru-RU')} ₽\n` 
+          : 'Нет данных\n';
+        
+        if (proj.notes) {
+          result += `\n📝 ЗАМЕТКИ:\n${proj.notes}\n`;
+        }
+        
+        result += `\n${fullInfo.task_summary}\n`;
+        result += `\n${fullInfo.invoice_summary}\n`;
+        
+        rowsAffected = fullInfo.tasks.length + fullInfo.invoices.length;
+        consoleLog('success', 'Full project info retrieved', { projectId });
+        break;
+      }
+
+      case 'search_data': {
+        const searchQuery = intent.data?.query || '';
+        if (!searchQuery) {
+          result = 'Укажите что искать.';
+          await log.finish({ outputData: { error: 'No query' }, status: 'warning' });
+          return result;
+        }
+        
+        const { data: searchResults, error } = await searchAllData(userId, searchQuery, {
+          type: intent.filters?.project_name ? 'projects' : intent.filters?.category ? 'invoices' : 'all'
+        });
+        
+        if (error || !searchResults) {
+          result = `Ошибка поиска: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error || 'Unknown' });
+          return result;
+        }
+        
+        result = searchResults.summary;
+        rowsAffected = searchResults.projects.length + searchResults.tasks.length + searchResults.invoices.length;
+        consoleLog('success', 'Search completed', { query: searchQuery, resultsCount: rowsAffected });
+        break;
+      }
+
+      case 'get_analytics': {
+        const { data: analytics, error } = await getInvoicesAnalytics(intent.filters);
+        
+        if (error || !analytics) {
+          result = `Ошибка получения аналитики: ${error}`;
+          await log.finish({ outputData: { error }, status: 'error', errorMessage: error || 'Unknown' });
+          return result;
+        }
+        
+        result = analytics.summary;
+        rowsAffected = analytics.by_category.length + analytics.by_supplier.length;
+        consoleLog('success', 'Analytics retrieved', { totalAmount: analytics.total_amount });
         break;
       }
 

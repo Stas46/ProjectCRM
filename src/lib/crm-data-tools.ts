@@ -617,6 +617,284 @@ export function parseDateRange(text: string): { date_from?: string; date_to?: st
 }
 
 /**
+ * Получить полную информацию о проекте (задачи, счета, бюджет)
+ */
+export async function getFullProjectInfo(
+  userId: string,
+  projectId: string
+): Promise<{ 
+  data: {
+    project: Project;
+    tasks: Task[];
+    invoices: Invoice[];
+    budget_stats: any;
+    task_summary: string;
+    invoice_summary: string;
+  } | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = getSupabaseClient();
+    
+    // Параллельно загружаем все данные проекта
+    const [projectRes, tasksRes, invoicesRes, budgetRes] = await Promise.all([
+      supabase.from('projects').select('*').eq('id', projectId).single(),
+      supabase.from('tasks').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('invoices').select(`*, suppliers (name, inn)`).eq('project_id', projectId).order('invoice_date', { ascending: false }),
+      getProjectBudgetStats(projectId)
+    ]);
+
+    if (projectRes.error) {
+      return { data: null, error: projectRes.error.message };
+    }
+
+    const tasks = tasksRes.data || [];
+    const invoices = invoicesRes.data || [];
+
+    return {
+      data: {
+        project: projectRes.data as Project,
+        tasks: tasks as Task[],
+        invoices: invoices as Invoice[],
+        budget_stats: budgetRes.data,
+        task_summary: createTasksSummary(tasks as Task[]),
+        invoice_summary: formatInvoicesForAI(invoices as Invoice[])
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('❌ Exception in getFullProjectInfo:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Поиск по всем данным CRM
+ */
+export async function searchAllData(
+  userId: string,
+  searchQuery: string,
+  filters?: { type?: 'projects' | 'tasks' | 'invoices' | 'all' }
+): Promise<{
+  data: {
+    projects: Project[];
+    tasks: Task[];
+    invoices: Invoice[];
+    summary: string;
+  } | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = getSupabaseClient();
+    const searchType = filters?.type || 'all';
+    
+    let projects: Project[] = [];
+    let tasks: Task[] = [];
+    let invoices: Invoice[] = [];
+
+    // Поиск в проектах
+    if (searchType === 'all' || searchType === 'projects') {
+      const { data } = await supabase
+        .from('projects')
+        .select('*')
+        .or(`title.ilike.%${searchQuery}%,project_name.ilike.%${searchQuery}%,client_name.ilike.%${searchQuery}%,notes.ilike.%${searchQuery}%`)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      projects = data as Project[] || [];
+    }
+
+    // Поиск в задачах
+    if (searchType === 'all' || searchType === 'tasks') {
+      const { data } = await supabase
+        .from('tasks')
+        .select('*')
+        .or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
+        .eq('assignee_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      tasks = data as Task[] || [];
+    }
+
+    // Поиск в счетах
+    if (searchType === 'all' || searchType === 'invoices') {
+      const { data } = await supabase
+        .from('invoices')
+        .select(`*, suppliers (name, inn)`)
+        .or(`invoice_number.ilike.%${searchQuery}%,supplier_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,items.ilike.%${searchQuery}%`)
+        .order('invoice_date', { ascending: false })
+        .limit(20);
+      invoices = data as Invoice[] || [];
+    }
+
+    // Создаём саммари результатов поиска
+    let summary = `🔍 РЕЗУЛЬТАТЫ ПОИСКА: "${searchQuery}"\n\n`;
+    summary += `📊 Найдено:\n`;
+    summary += `- Проектов: ${projects.length}\n`;
+    summary += `- Задач: ${tasks.length}\n`;
+    summary += `- Счетов: ${invoices.length}\n\n`;
+
+    if (projects.length > 0) {
+      summary += `🏗️ ПРОЕКТЫ:\n`;
+      projects.slice(0, 5).forEach((p, i) => {
+        summary += `${i + 1}. ${p.project_name || p.title} (${p.status})\n`;
+      });
+      summary += '\n';
+    }
+
+    if (tasks.length > 0) {
+      summary += `✅ ЗАДАЧИ:\n`;
+      tasks.slice(0, 5).forEach((t, i) => {
+        summary += `${i + 1}. ${t.title} (${t.status})\n`;
+      });
+      summary += '\n';
+    }
+
+    if (invoices.length > 0) {
+      summary += `💰 СЧЕТА:\n`;
+      invoices.slice(0, 5).forEach((inv, i) => {
+        summary += `${i + 1}. ${inv.invoice_number} - ${inv.supplier_name} (${inv.total_amount?.toLocaleString('ru-RU')} ₽)\n`;
+      });
+    }
+
+    return {
+      data: { projects, tasks, invoices, summary },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('❌ Exception in searchAllData:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Получить аналитику по счетам
+ */
+export async function getInvoicesAnalytics(
+  filters?: DataQueryFilters & { paid_status?: boolean }
+): Promise<{
+  data: {
+    total_amount: number;
+    paid_amount: number;
+    unpaid_amount: number;
+    by_category: Array<{ category: string; total: number; count: number }>;
+    by_supplier: Array<{ supplier: string; total: number; count: number }>;
+    by_month: Array<{ month: string; total: number; count: number }>;
+    top_suppliers: Array<{ supplier: string; total: number }>;
+    summary: string;
+  } | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = getSupabaseClient();
+    
+    let query = supabase
+      .from('invoices')
+      .select(`*, suppliers (name, inn)`)
+      .order('invoice_date', { ascending: false });
+
+    if (filters?.project_id) {
+      query = query.eq('project_id', filters.project_id);
+    }
+    if (filters?.category) {
+      query = query.ilike('category', `%${filters.category}%`);
+    }
+    if (filters?.supplier_name) {
+      query = query.ilike('supplier_name', `%${filters.supplier_name}%`);
+    }
+    if (filters?.date_from) {
+      query = query.gte('invoice_date', filters.date_from);
+    }
+    if (filters?.date_to) {
+      query = query.lte('invoice_date', filters.date_to);
+    }
+
+    const { data: invoices, error } = await query;
+    
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    const allInvoices = invoices || [];
+    
+    // Общие суммы
+    const totalAmount = allInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
+    const paidAmount = allInvoices.filter(inv => inv.paid_status).reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
+    const unpaidAmount = totalAmount - paidAmount;
+
+    // По категориям
+    const byCategory = allInvoices.reduce((acc, inv) => {
+      const cat = inv.category || 'Без категории';
+      if (!acc[cat]) acc[cat] = { category: cat, total: 0, count: 0 };
+      acc[cat].total += inv.total_amount || 0;
+      acc[cat].count += 1;
+      return acc;
+    }, {} as Record<string, { category: string; total: number; count: number }>);
+
+    // По поставщикам
+    const bySupplier = allInvoices.reduce((acc, inv) => {
+      const supplier = inv.suppliers?.name || inv.supplier_name || 'Неизвестный';
+      if (!acc[supplier]) acc[supplier] = { supplier, total: 0, count: 0 };
+      acc[supplier].total += inv.total_amount || 0;
+      acc[supplier].count += 1;
+      return acc;
+    }, {} as Record<string, { supplier: string; total: number; count: number }>);
+
+    // По месяцам
+    const byMonth = allInvoices.reduce((acc, inv) => {
+      if (!inv.invoice_date) return acc;
+      const date = new Date(inv.invoice_date);
+      const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (!acc[month]) acc[month] = { month, total: 0, count: 0 };
+      acc[month].total += inv.total_amount || 0;
+      acc[month].count += 1;
+      return acc;
+    }, {} as Record<string, { month: string; total: number; count: number }>);
+
+    // Топ-5 поставщиков
+    const topSuppliers = Object.values(bySupplier)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+      .map(s => ({ supplier: s.supplier, total: s.total }));
+
+    // Саммари
+    let summary = '💰 АНАЛИТИКА ПО СЧЕТАМ\n\n';
+    summary += `📊 Общая статистика:\n`;
+    summary += `- Всего счетов: ${allInvoices.length}\n`;
+    summary += `- Общая сумма: ${totalAmount.toLocaleString('ru-RU')} ₽\n`;
+    summary += `- Оплачено: ${paidAmount.toLocaleString('ru-RU')} ₽\n`;
+    summary += `- Не оплачено: ${unpaidAmount.toLocaleString('ru-RU')} ₽\n\n`;
+
+    summary += `📦 По категориям:\n`;
+    Object.values(byCategory).slice(0, 5).forEach(cat => {
+      summary += `- ${cat.category}: ${cat.total.toLocaleString('ru-RU')} ₽ (${cat.count} шт)\n`;
+    });
+    summary += '\n';
+
+    summary += `🏪 Топ-5 поставщиков:\n`;
+    topSuppliers.forEach((s, i) => {
+      summary += `${i + 1}. ${s.supplier}: ${s.total.toLocaleString('ru-RU')} ₽\n`;
+    });
+
+    return {
+      data: {
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        unpaid_amount: unpaidAmount,
+        by_category: Object.values(byCategory),
+        by_supplier: Object.values(bySupplier),
+        by_month: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
+        top_suppliers: topSuppliers,
+        summary
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('❌ Exception in getInvoicesAnalytics:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
  * Создать саммари по задачам проекта
  */
 export function createTasksSummary(tasks: Task[]): string {

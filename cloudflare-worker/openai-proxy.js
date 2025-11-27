@@ -1,27 +1,66 @@
 /**
- * Cloudflare Worker для проксирования OpenAI API
- * Обходит блокировку OpenAI в России
+ * Cloudflare Worker для проксирования OpenAI и Anthropic API
+ * Обходит блокировку в России
  * 
- * Инструкция по развертыванию:
- * 1. Зайдите на https://dash.cloudflare.com/
- * 2. Workers & Pages → Create Worker
- * 3. Скопируйте код ниже
- * 4. Deploy
- * 5. Скопируйте URL воркера (например: https://openai-proxy.your-subdomain.workers.dev)
- * 6. Добавьте в .env.local: OPENAI_BASE_URL=https://openai-proxy.your-subdomain.workers.dev/v1
+ * Использование:
+ * - OpenAI: https://your-worker.workers.dev/openai/v1/...
+ * - Anthropic: https://your-worker.workers.dev/anthropic/v1/...
+ * 
+ * Инструкция:
+ * 1. https://dash.cloudflare.com/ → Workers & Pages → Create Worker
+ * 2. Скопируйте этот код → Save and Deploy
+ * 3. В OpenHands:
+ *    - OpenAI Base URL: https://your-worker.workers.dev/openai/v1
+ *    - Anthropic Base URL: https://your-worker.workers.dev/anthropic/v1
  */
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // Базовый URL OpenAI API
-    const OPENAI_API_BASE = 'https://api.openai.com';
+    // Обработка CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Max-Age': '86400',
+        }
+      });
+    }
     
-    // Создаём новый URL для OpenAI
-    const openaiUrl = OPENAI_API_BASE + url.pathname + url.search;
+    // Определяем целевой API по пути
+    let targetBase;
+    let targetPath = url.pathname;
     
-    // Копируем все заголовки из оригинального запроса
+    if (url.pathname.startsWith('/openai')) {
+      targetBase = 'https://api.openai.com';
+      targetPath = url.pathname.replace('/openai', '');
+    } else if (url.pathname.startsWith('/anthropic')) {
+      targetBase = 'https://api.anthropic.com';
+      targetPath = url.pathname.replace('/anthropic', '');
+    } else {
+      return new Response(JSON.stringify({
+        error: 'Invalid path',
+        message: 'Use /openai/... or /anthropic/...',
+        examples: {
+          openai: 'https://your-worker.workers.dev/openai/v1/chat/completions',
+          anthropic: 'https://your-worker.workers.dev/anthropic/v1/messages'
+        }
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+    
+    // Создаём URL для целевого API
+    const targetUrl = targetBase + targetPath + url.search;
+    
+    // Копируем заголовки
     const headers = new Headers(request.headers);
     
     // Убираем заголовки Cloudflare
@@ -29,22 +68,22 @@ export default {
     headers.delete('cf-ipcountry');
     headers.delete('cf-ray');
     headers.delete('cf-visitor');
+    headers.delete('host');
     
-    // Создаём новый запрос к OpenAI
-    const newRequest = new Request(openaiUrl, {
+    // Создаём запрос
+    const newRequest = new Request(targetUrl, {
       method: request.method,
       headers: headers,
       body: request.body,
     });
     
     try {
-      // Проксируем запрос к OpenAI
+      // Проксируем запрос
       const response = await fetch(newRequest);
       
-      // Создаём новый ответ с CORS заголовками
+      // Создаём ответ с CORS
       const newResponse = new Response(response.body, response);
       
-      // Добавляем CORS заголовки
       newResponse.headers.set('Access-Control-Allow-Origin', '*');
       newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       newResponse.headers.set('Access-Control-Allow-Headers', '*');
@@ -53,7 +92,8 @@ export default {
     } catch (error) {
       return new Response(JSON.stringify({ 
         error: 'Proxy error', 
-        message: error.message 
+        message: error.message,
+        target: targetUrl
       }), {
         status: 500,
         headers: {

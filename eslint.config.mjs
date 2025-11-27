@@ -13,13 +13,18 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     ignores: [
-      "**/*",  // Игнорируем все файлы для production сборки
       "node_modules/**",
       ".next/**",
       "out/**",
       "build/**",
       "next-env.d.ts",
     ],
+  },
+  {
+    // Отключаем проблемное правило jsx-a11y/lang, если оно вызывает ошибки
+    rules: {
+      "jsx-a11y/lang": "off", // Временно отключаем из-за проблемы с language-subtag-registry
+    },
   },
 ];
 
