@@ -865,7 +865,8 @@ export async function getInvoicesAnalytics(
     summary += `- Не оплачено: ${unpaidAmount.toLocaleString('ru-RU')} ₽\n\n`;
 
     summary += `📦 По категориям:\n`;
-    Object.values(byCategory).slice(0, 5).forEach(cat => {
+    (Object.values(byCategory) as Array<{ category: string; total: number; count: number }>)
+      .slice(0, 5).forEach(cat => {
       summary += `- ${cat.category}: ${cat.total.toLocaleString('ru-RU')} ₽ (${cat.count} шт)\n`;
     });
     summary += '\n';
