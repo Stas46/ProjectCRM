@@ -419,9 +419,11 @@ async function handleCommand(
         return;
       }
 
-      const projectList = projects.map((p: any, i: number) => 
-        `${i + 1}. ${p.client_name || p.project_name || 'Без названия'}`
-      ).join('\n');
+      const projectList = projects.map((p: any, i: number) => {
+        const name = p.project_name || p.client_name || p.title || `Проект #${p.project_number || i + 1}`;
+        const status = p.status === 'active' ? '🟢' : p.status === 'completed' ? '✅' : p.status === 'cancelled' ? '❌' : '⏸️';
+        return `${i + 1}. ${status} ${name}`;
+      }).join('\n');
 
       await sendTelegramMessage(chatId, `📁 *Ваши проекты:*\n\n${projectList}`);
       break;

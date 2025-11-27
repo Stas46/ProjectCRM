@@ -27,6 +27,15 @@ import {
   calculateDepartureTime,
   geocodeAddress
 } from './personal-assistant-services';
+import {
+  getUserTasks,
+  getUserProjects,
+  getUserInvoices,
+  getProjectDetails,
+  createTask,
+  updateTaskStatus,
+  searchProjects
+} from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
 
 const deepseek = new OpenAI({
@@ -547,7 +556,119 @@ async function executePersonalAction(
         break;
       }
 
-      // ========== ЗАДАТЬ ВОПРОС ==========
+      // ========== CRM: ЗАДАЧИ ==========
+      case 'get_tasks': {
+        const { data: tasks } = await getUserTasks(userId, { limit: 20 });
+        if (!tasks || tasks.length === 0) {
+          result = '📋 У тебя нет активных задач';
+        } else {
+          result = `📋 **Твои задачи:**\n\n`;
+          tasks.slice(0, 10).forEach((t: any, i: number) => {
+            const priority = t.priority === 1 ? '🔴' : t.priority === 2 ? '🟡' : '🟢';
+            const status = t.status === 'in_progress' ? '▶️' : t.status === 'done' ? '✅' : '⏸️';
+            result += `${i + 1}. ${status} ${priority} ${t.title}\n`;
+          });
+        }
+        break;
+      }
+
+      // ========== CRM: ПРОЕКТЫ ==========
+      case 'get_projects': {
+        const { data: projects } = await getUserProjects(userId, { limit: 20 });
+        if (!projects || projects.length === 0) {
+          result = '📁 Нет активных проектов';
+        } else {
+          result = `📁 **Твои проекты:**\n\n`;
+          projects.slice(0, 10).forEach((p: any, i: number) => {
+            const name = p.project_name || p.client_name || p.title || 'Без названия';
+            const status = p.status === 'active' ? '🟢' : p.status === 'completed' ? '✅' : '⏸️';
+            result += `${i + 1}. ${status} ${name}\n`;
+            if (p.deadline) {
+              const deadline = new Date(p.deadline);
+              result += `   📅 Срок: ${deadline.toLocaleDateString('ru-RU')}\n`;
+            }
+          });
+        }
+        break;
+      }
+
+      // ========== CRM: СЧЕТА ==========
+      case 'get_invoices': {
+        const { data: invoices } = await getUserInvoices(userId, { limit: 20 });
+        if (!invoices || invoices.length === 0) {
+          result = '💰 Нет счетов';
+        } else {
+          result = `💰 **Счета:**\n\n`;
+          invoices.slice(0, 10).forEach((inv: any, i: number) => {
+            const status = inv.paid_status ? '✅' : '⏳';
+            result += `${i + 1}. ${status} ${inv.invoice_number} - ${inv.total_amount?.toLocaleString('ru-RU')} ₽\n`;
+            if (inv.supplier_name) result += `   🏪 ${inv.supplier_name}\n`;
+          });
+        }
+        break;
+      }
+
+      // ========== CRM: ДЕТАЛИ ПРОЕКТА ==========
+      case 'get_full_project': {
+        const projectId = intent.data?.project_id;
+        if (!projectId) {
+          result = '❌ Не указан ID проекта';
+          break;
+        }
+        const { data: project } = await getProjectDetails(projectId);
+        if (!project) {
+          result = '❌ Проект не найден';
+        } else {
+          result = `🏗️ **${project.project_name || project.client_name}**\n\n`;
+          result += `📊 Статус: ${project.status}\n`;
+          if (project.total_cost) result += `💰 Бюджет: ${project.total_cost.toLocaleString('ru-RU')} ₽\n`;
+          if (project.deadline) result += `📅 Срок: ${new Date(project.deadline).toLocaleDateString('ru-RU')}\n`;
+        }
+        break;
+      }
+
+      // ========== CRM: ПОИСК ==========
+      case 'search_data': {
+        const query = intent.data?.query;
+        if (!query) {
+          result = '❌ Не указан запрос для поиска';
+          break;
+        }
+        const { data: projects } = await searchProjects(query);
+        if (!projects || projects.length === 0) {
+          result = `🔍 По запросу "${query}" ничего не найдено`;
+        } else {
+          result = `🔍 **Результаты поиска "${query}":**\n\n`;
+          projects.slice(0, 5).forEach((p: any, i: number) => {
+            result += `${i + 1}. ${p.project_name || p.client_name}\n`;
+          });
+        }
+        break;
+      }
+
+      // ========== CRM: СОЗДАТЬ ЗАДАЧУ ==========
+      case 'create_task': {
+        const title = intent.data?.title;
+        if (!title) {
+          result = '❌ Не указано название задачи';
+          break;
+        }
+        const taskData = {
+          title,
+          priority: intent.data?.priority || 2,
+          status: 'todo' as const,
+          description: intent.data?.description
+        };
+        const { data: task, error } = await createTask(userId, taskData);
+        if (error || !task) {
+          result = `❌ Ошибка создания задачи: ${error}`;
+        } else {
+          result = `✅ Создал задачу: "${title}"`;
+        }
+        break;
+      }
+
+      // ========== ПРОАКТИВНЫЙ ВОПРОС ==========
       case 'ask_question': {
         const question = intent.data?.question || intent.proactive_question;
         const topic = intent.data?.topic;
@@ -612,6 +733,26 @@ async function executePersonalAction(
           });
         }
 
+        break;
+      }
+
+      // ========== СОХРАНИТЬ ПРЕДПОЧТЕНИЕ/ФАКТ ==========
+      case 'save_preference': {
+        const key = intent.data?.key;
+        const value = intent.data?.value;
+        
+        if (!key) {
+          result = 'Ошибка: не указан ключ для сохранения';
+          break;
+        }
+
+        const { success, error } = await saveContext(userId, 'fact', key, value, { source: 'user_said' });
+        
+        if (error) {
+          result = `❌ Ошибка сохранения: ${error}`;
+        } else {
+          result = `✅ Запомнил: ${key}`;
+        }
         break;
       }
 
