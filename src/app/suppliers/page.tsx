@@ -21,7 +21,7 @@ interface SupplierInvoice {
   file_url: string | null;
   project?: {
     name: string;
-  };
+  } | null;
 }
 
 export default function SuppliersPage() {
