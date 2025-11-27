@@ -178,9 +178,54 @@ class UltimateInvoiceParser:
 
     def extract_contractor_name(self, text: str) -> Optional[str]:
         """Извлекает название организации-поставщика"""
+        
+        # ИНН покупателя для исключения (Ткачев С.О.)
+        buyer_inn = '784802613697'
+        buyer_patterns = ['ткачев', 'tkachev', buyer_inn]
 
-        # 1. Приоритетные известные компании (точные совпадения из логов)
+        # 1. ВЫСШИЙ ПРИОРИТЕТ: Прямое указание "Поставщик:" в начале строки
+        # Формат: "Поставщик: Акционерное Общество "Балтийское Стекло", ИНН 7801514385"
+        direct_supplier_patterns = [
+            # АО/ОАО/ЗАО/ПАО с кавычками
+            r'Поставщик:\s*((?:Акционерное\s+Общество|АО|ОАО|ЗАО|ПАО)\s*["""«]([^"""»\n]{3,60})["""»])',
+            # ООО с кавычками
+            r'Поставщик:\s*(ООО\s*["""«]([^"""»\n]{3,60})["""»])',
+            # Любая орг. форма + название до запятой/ИНН
+            r'Поставщик:\s*((?:АО|ОАО|ЗАО|ПАО|ООО)\s*["""«]?[^,\n]{3,60}?)(?:,\s*ИНН|\s+ИНН)',
+            # Акционерное Общество полностью
+            r'Поставщик:\s*(Акционерное\s+Общество\s*["""«]?[^,\n]{3,60}?)(?:,|\s+ИНН)',
+        ]
+        
+        for pattern in direct_supplier_patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                company_name = match.group(1).strip()
+                
+                # Проверяем, что это НЕ покупатель
+                if any(buyer in company_name.lower() for buyer in buyer_patterns):
+                    continue
+                
+                # Очистка
+                company_name = re.sub(r'\s+', ' ', company_name)
+                company_name = re.sub(r',?\s*КПП.*$', '', company_name, flags=re.IGNORECASE)
+                company_name = company_name.strip('"«»""')
+                
+                # Нормализация АО
+                if company_name.lower().startswith('акционерное общество'):
+                    name_part = re.sub(r'^акционерное\s+общество\s*', '', company_name, flags=re.IGNORECASE).strip('"«»"" ')
+                    company_name = f'АО "{name_part}"'
+                elif company_name.startswith('АО ') and '"' not in company_name:
+                    name_part = company_name[3:].strip()
+                    company_name = f'АО "{name_part}"'
+                
+                if len(company_name) >= 5:
+                    if self.debug:
+                        print(f"Найдено название поставщика (прямое указание): '{company_name}'")
+                    return company_name
+
+        # 2. Приоритетные известные компании (точные совпадения из логов)
         known_companies = [
+            r'Балтийское\s+Стекло',  # Добавлено!
             r'МЕТАЛЛМАСТЕР-М',
             r'АлРус',
             r'Эксперт\s+Рентал\s+Инжиниринг',
@@ -196,8 +241,10 @@ class UltimateInvoiceParser:
             if match:
                 company_name = match.group().strip()
 
-                # Нормализация названий (исправляем OCR ошибки)
-                if 'ксперт' in company_name.lower():
+                # Нормализация названий
+                if 'балтийское' in company_name.lower() and 'стекло' in company_name.lower():
+                    company_name = 'АО "Балтийское Стекло"'
+                elif 'ксперт' in company_name.lower():
                     company_name = "Эксперт Рентал Инжиниринг"
                 elif 'спецмаш' in company_name.lower() and not company_name.startswith('ООО'):
                     company_name = 'ООО "Спецмаш"'
@@ -206,7 +253,7 @@ class UltimateInvoiceParser:
                     print(f"Найдено название: '{company_name}'")
                 return company_name
 
-        # 2. КРИТИЧНО ДЛЯ EXCEL: Ищем поставщика в строке с "Получатель:" (это ПРОДАВЕЦ!)
+        # 3. КРИТИЧНО ДЛЯ EXCEL: Ищем поставщика в строке с "Получатель:" (это ПРОДАВЕЦ!)
         # В вашем формате счетов:
         # Получатель: ООО "Группа компаний "СтиС"" - это ПОСТАВЩИК (продавец)
         # Заказчик: ИП Ткачев С.О. - это ПОКУПАТЕЛЬ (вы)
@@ -242,7 +289,7 @@ class UltimateInvoiceParser:
                 company_name = company_name.strip('"«»""')
                 
                 # Исключаем покупателя (вас)
-                if 'ткачев' in company_name.lower() or '784802613697' in text[max(0, match.start()-100):match.end()+100]:
+                if any(buyer in company_name.lower() for buyer in buyer_patterns):
                     continue
                 
                 if len(company_name) >= 5:
@@ -255,7 +302,7 @@ class UltimateInvoiceParser:
                         print(f"Найдено название поставщика (Excel формат): '{company_name}'")
                     return company_name
 
-        # 3. Ищем в строках с "Получатель", "Продавец", "Поставщик" - избегаем фрагментов про самовывоз
+        # 4. Ищем в строках с "Получатель", "Продавец", "Поставщик" - избегаем фрагментов про самовывоз
         supplier_context_patterns = [
             r'(?:Получатель|Продавец|Поставщик)[\s:]*\n?\s*((?:ООО|ИП|АО|ЗАО|ПАО)\s*["""«]?[^"""»\n]{3,50}["""»]?)',
             r'(?:Получатель|Продавец|Поставщик)[^\n]{0,200}?((?:ООО|ИП|АО)\s*["""«][^"""»\n]{3,50}["""»])',
@@ -265,6 +312,10 @@ class UltimateInvoiceParser:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
             if match:
                 company_name = match.group(1).strip()
+                
+                # Исключаем покупателя
+                if any(buyer in company_name.lower() for buyer in buyer_patterns):
+                    continue
                 
                 # Очистка
                 company_name = re.sub(r'\s+', ' ', company_name)
@@ -280,7 +331,7 @@ class UltimateInvoiceParser:
                         print(f"Найдено название поставщика (с контекстом): '{company_name}'")
                     return company_name
 
-        # 3. ООО в кавычках по всему тексту
+        # 5. ООО в кавычках по всему тексту
         patterns = [
             # ООО с вложенными кавычками - жадный захват до последней кавычки
             r'ООО\s*"(.*)"',
@@ -342,29 +393,46 @@ class UltimateInvoiceParser:
         # ИСКЛЮЧАЕМ ИНН Ткачева (это покупатель, а не поставщик!)
         buyer_inn = '784802613697'
         
-        # ПРИОРИТЕТ 1: ИНН из строки "Получатель:" (это поставщик в вашем формате счетов!)
-        # Пример: "Получатель 7720774346/470645001 ООО "Группа компаний "СтиС""
-        receiver_patterns = [
-            r'Получатель[:\s]*\n?\s*(\d{10,12})',  # ИНН сразу после "Получатель"
-            r'Получатель[^\n]{0,100}?ИНН[:\s]*(\d{10,12})',
+        supplier_inn = None
+        
+        # ПРИОРИТЕТ 0 (ВЫСШИЙ): ИНН в строке "Поставщик:" 
+        # Формат: "Поставщик: Акционерное Общество "Балтийское Стекло", ИНН 7801514385"
+        direct_postavschik_patterns = [
+            r'Поставщик:[^\n]*?ИНН[:\s]*(\d{10,12})',
+            r'Поставщик:[^\n]*?(\d{10})\s*/\s*\d{9}',  # ИНН/КПП
         ]
         
-        supplier_inn = None
-        for pattern in receiver_patterns:
+        for pattern in direct_postavschik_patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
                 found_inn = match.group(1)
                 if found_inn != buyer_inn and len(found_inn) in [10, 12]:
                     supplier_inn = found_inn
                     if self.debug:
-                        print(f"Найден ИНН поставщика (Получатель): {supplier_inn}")
+                        print(f"Найден ИНН поставщика (строка Поставщик): {supplier_inn}")
                     break
         
-        # ПРИОРИТЕТ 2: ИНН СРАЗУ после "Продавец:" или "Поставщик:" в той же строке
+        # ПРИОРИТЕТ 1: ИНН из строки "Получатель:" (это поставщик в некоторых форматах счетов!)
+        if not supplier_inn:
+            receiver_patterns = [
+                r'Получатель[:\s]*\n?\s*(\d{10,12})',  # ИНН сразу после "Получатель"
+                r'Получатель[^\n]{0,100}?ИНН[:\s]*(\d{10,12})',
+            ]
+            
+            for pattern in receiver_patterns:
+                match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+                if match:
+                    found_inn = match.group(1)
+                    if found_inn != buyer_inn and len(found_inn) in [10, 12]:
+                        supplier_inn = found_inn
+                        if self.debug:
+                            print(f"Найден ИНН поставщика (Получатель): {supplier_inn}")
+                        break
+        
+        # ПРИОРИТЕТ 2: ИНН СРАЗУ после "Продавец:" в той же строке
         if not supplier_inn:
             direct_supplier_patterns = [
-                r'(?:Продавец|Поставщик):[^\n]{0,100}?ИНН[:\s]*(\d{10,12})',
-                r'(?:Продавец|Поставщик)[^\n]{0,100}?ИНН[:\s]*(\d{10,12})',
+                r'(?:Продавец):[^\n]{0,100}?ИНН[:\s]*(\d{10,12})',
             ]
             
             for pattern in direct_supplier_patterns:
@@ -394,7 +462,7 @@ class UltimateInvoiceParser:
                             print(f"Найден ИНН поставщика (с контекстом): {supplier_inn}")
                         break
         
-        # ПРИОРИТЕТ 2: Все ИНН в документе
+        # ПРИОРИТЕТ 4: Все ИНН в документе (но исключаем ИНН покупателя!)
         inn_patterns = [
             r'ИНН[:\s]*(\d{10,12})',
             r'ИНН\s+(\d{10,12})',
