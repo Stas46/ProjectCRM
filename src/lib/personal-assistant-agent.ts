@@ -636,14 +636,39 @@ async function executePersonalAction(
           result = '❌ Не указан запрос для поиска';
           break;
         }
-        const { data: projects } = await searchAllData(query);
-        if (!projects || projects.length === 0) {
+        const { data: searchResults } = await searchAllData(userId, query);
+        if (!searchResults) {
           result = `🔍 По запросу "${query}" ничего не найдено`;
         } else {
+          const { projects, tasks, invoices } = searchResults;
           result = `🔍 **Результаты поиска "${query}":**\n\n`;
-          projects.slice(0, 5).forEach((p: any, i: number) => {
-            result += `${i + 1}. ${p.project_name || p.client_name}\n`;
-          });
+          
+          if (projects.length > 0) {
+            result += `📁 **Проекты (${projects.length}):**\n`;
+            projects.slice(0, 3).forEach((p: any, i: number) => {
+              result += `${i + 1}. ${p.project_name || p.client_name || 'Без названия'}\n`;
+            });
+            result += '\n';
+          }
+          
+          if (tasks.length > 0) {
+            result += `📋 **Задачи (${tasks.length}):**\n`;
+            tasks.slice(0, 3).forEach((t: any, i: number) => {
+              result += `${i + 1}. ${t.title}\n`;
+            });
+            result += '\n';
+          }
+          
+          if (invoices.length > 0) {
+            result += `💰 **Счета (${invoices.length}):**\n`;
+            invoices.slice(0, 3).forEach((inv: any, i: number) => {
+              result += `${i + 1}. ${inv.invoice_number} - ${inv.total_amount?.toLocaleString('ru-RU')} ₽\n`;
+            });
+          }
+          
+          if (projects.length === 0 && tasks.length === 0 && invoices.length === 0) {
+            result = `🔍 По запросу "${query}" ничего не найдено`;
+          }
         }
         break;
       }
