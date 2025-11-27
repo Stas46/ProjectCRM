@@ -19,6 +19,7 @@ function getSupabaseServiceClient() {
  */
 export async function sendTelegramMessage(chatId: number, text: string, options?: any) {
   try {
+    console.log(`📤 Sending Telegram message to ${chatId}: ${text.substring(0, 50)}...`);
     const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -36,7 +37,9 @@ export async function sendTelegramMessage(chatId: number, text: string, options?
       return { success: false, error };
     }
 
-    return { success: true, data: await response.json() };
+    const result = await response.json();
+    console.log(`✅ Message sent successfully to ${chatId}`);
+    return { success: true, data: result };
   } catch (error: any) {
     console.error('❌ Error sending Telegram message:', error);
     return { success: false, error: error.message };

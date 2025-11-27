@@ -333,7 +333,9 @@ async function handleCommand(
   command: string,
   username?: string
 ) {
-  const cmd = command.split(' ')[0].toLowerCase();
+  try {
+    console.log(`🤖 Handling command: ${command} from ${telegramId}`);
+    const cmd = command.split(' ')[0].toLowerCase();
 
   switch (cmd) {
     case '/start': {
@@ -449,6 +451,10 @@ async function handleCommand(
     default: {
       await sendTelegramMessage(chatId, 'Неизвестная команда. Используйте /help');
     }
+  }
+  } catch (error: any) {
+    console.error('❌ Error in handleCommand:', error);
+    await sendTelegramMessage(chatId, '❌ Произошла ошибка при выполнении команды. Попробуйте позже.');
   }
 }
 
