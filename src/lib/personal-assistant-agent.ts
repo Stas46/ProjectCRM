@@ -615,14 +615,16 @@ async function executePersonalAction(
           result = '❌ Не указан ID проекта';
           break;
         }
-        const { data: project } = await getFullProjectInfo(projectId);
+        const { data: project } = await getFullProjectInfo(userId, projectId);
         if (!project) {
           result = '❌ Проект не найден';
         } else {
-          result = `🏗️ **${project.project_name || project.client_name}**\n\n`;
-          result += `📊 Статус: ${project.status}\n`;
-          if (project.total_cost) result += `💰 Бюджет: ${project.total_cost.toLocaleString('ru-RU')} ₽\n`;
-          if (project.deadline) result += `📅 Срок: ${new Date(project.deadline).toLocaleDateString('ru-RU')}\n`;
+          result = `🏗️ **${project.project.project_name || project.project.client_name}**\n\n`;
+          result += `📊 Статус: ${project.project.status}\n`;
+          if (project.project.total_cost) result += `💰 Бюджет: ${project.project.total_cost.toLocaleString('ru-RU')} ₽\n`;
+          if (project.project.deadline) result += `📅 Срок: ${new Date(project.project.deadline).toLocaleDateString('ru-RU')}\n`;
+          result += `\n📋 Задачи: ${project.tasks.length}\n`;
+          result += `💰 Счета: ${project.invoices.length}`;
         }
         break;
       }
