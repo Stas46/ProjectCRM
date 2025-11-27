@@ -31,10 +31,10 @@ import {
   getUserTasks,
   getUserProjects,
   getUserInvoices,
-  getProjectDetails,
+  getFullProjectInfo,
   createTask,
   updateTaskStatus,
-  searchProjects
+  searchAllData
 } from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
 
@@ -615,7 +615,7 @@ async function executePersonalAction(
           result = '❌ Не указан ID проекта';
           break;
         }
-        const { data: project } = await getProjectDetails(projectId);
+        const { data: project } = await getFullProjectInfo(projectId);
         if (!project) {
           result = '❌ Проект не найден';
         } else {
@@ -634,7 +634,7 @@ async function executePersonalAction(
           result = '❌ Не указан запрос для поиска';
           break;
         }
-        const { data: projects } = await searchProjects(query);
+        const { data: projects } = await searchAllData(query);
         if (!projects || projects.length === 0) {
           result = `🔍 По запросу "${query}" ничего не найдено`;
         } else {
@@ -643,6 +643,8 @@ async function executePersonalAction(
             result += `${i + 1}. ${p.project_name || p.client_name}\n`;
           });
         }
+        break;
+      }
         break;
       }
 
