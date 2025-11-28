@@ -256,25 +256,49 @@ export async function saveContext(
       expiresAt = expires.toISOString();
     }
 
-    const { error } = await supabase
+    const data = {
+      user_id: userId,
+      context_type: contextType,
+      key,
+      value,
+      confidence: options?.confidence || 1.0,
+      source: options?.source || 'user_said',
+      expires_at: expiresAt,
+      last_updated: new Date().toISOString()
+    };
+
+    // Сначала пробуем найти существующую запись
+    const { data: existing } = await supabase
       .from('conversation_context')
-      .upsert({
-        user_id: userId,
-        context_type: contextType,
-        key,
-        value,
-        confidence: options?.confidence || 1.0,
-        source: options?.source || 'user_said',
-        expires_at: expiresAt,
-        last_updated: new Date().toISOString()
-      }, { onConflict: 'user_id,key' });
+      .select('id')
+      .eq('user_id', userId)
+      .eq('key', key)
+      .single();
+
+    let error;
+    if (existing) {
+      // Обновляем существующую
+      const result = await supabase
+        .from('conversation_context')
+        .update(data)
+        .eq('id', existing.id);
+      error = result.error;
+    } else {
+      // Создаём новую
+      const result = await supabase
+        .from('conversation_context')
+        .insert(data);
+      error = result.error;
+    }
 
     if (error) {
+      console.error('saveContext error:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, error: null };
   } catch (error: any) {
+    console.error('saveContext exception:', error);
     return { success: false, error: error.message };
   }
 }

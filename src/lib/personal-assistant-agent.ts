@@ -611,14 +611,50 @@ async function executePersonalAction(
           break;
         }
 
-        await saveContext(userId, 'preference', key, value, { source: 'user_said' });
-        result = `✅ Запомнил: ${key}`;
+        const { upsertUserProfile } = await import('./personal-data-tools');
 
-        // Если это адрес - геокодируем и сохраняем в профиль
+        // Маппинг ключей на поля профиля
+        const profileKeyMap: Record<string, string> = {
+          'user_name': 'full_name',
+          'name': 'full_name',
+          'имя': 'full_name',
+          'home_address': 'home_address',
+          'домашний_адрес': 'home_address',
+          'work_address': 'work_address',
+          'рабочий_адрес': 'work_address',
+          'birthday': 'birthday',
+          'день_рождения': 'birthday',
+          'car_plate': 'car_plate',
+          'номер_машины': 'car_plate',
+        };
+
+        // Сохраняем в контекст
+        const saveResult = await saveContext(userId, 'preference', key, value, { source: 'user_said' });
+        
+        if (!saveResult.success) {
+          consoleLog('error', 'Failed to save context', { key, error: saveResult.error });
+        }
+
+        // Если ключ относится к профилю — сохраняем также в user_profiles
+        const profileField = profileKeyMap[key.toLowerCase()];
+        if (profileField && typeof value === 'string') {
+          const profileResult = await upsertUserProfile(userId, {
+            [profileField]: value
+          } as any);
+          
+          if (profileResult.error) {
+            consoleLog('error', 'Failed to save to profile', { profileField, error: profileResult.error });
+          } else {
+            consoleLog('info', 'Saved to user_profiles', { profileField, value });
+          }
+        }
+
+        result = `✅ Запомнил: ${value}`;
+
+        // Если это адрес - геокодируем и сохраняем координаты
         if (key.includes('address') && typeof value === 'string') {
           const { data: geo } = await geocodeAddress(value);
           if (geo) {
-            const { upsertUserProfile } = await import('./personal-data-tools');
             await upsertUserProfile(userId, {
               [key]: value,
               [`${key.replace('_address', '_coordinates')}`]: { lat: geo.lat, lon: geo.lon }
