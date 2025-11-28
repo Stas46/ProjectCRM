@@ -165,6 +165,10 @@ export async function POST(req: NextRequest) {
     const currentMode = getUserMode(telegramId);
     console.log(`🎯 User mode: ${currentMode}`);
 
+    // Сохраняем telegram_chat_id для напоминаний
+    const { saveContext } = await import('@/lib/personal-data-tools');
+    await saveContext(userId, 'fact', 'telegram_chat_id', chatId);
+
     let finalResponse = '';
 
     // Режим AI - только DeepSeek без CRM

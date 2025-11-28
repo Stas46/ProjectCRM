@@ -4,6 +4,7 @@
  */
 
 import OpenAI from 'openai';
+import { supabase } from './supabase';
 import {
   getUserProfile,
   getFamilyMembers,
@@ -97,6 +98,8 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 **Личные:**
 - get_weather - погода сейчас и прогноз
 - get_route - маршрут и время в пути
+- calculate_departure - рассчитать когда выезжать чтобы быть в X к Y времени
+- set_reminder - установить напоминание (через N минут или в конкретное время)
 - get_traffic - уровень пробок
 - get_family - информация о семье
 - get_events - предстоящие события
@@ -253,6 +256,42 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "reasoning": "Маршрут до аэропорта"
 }
 
+👤: мне надо быть дома в 17:15, когда выезжать?
+🤖: {
+  "action": "calculate_departure",
+  "data": { "to": "home", "arrival_time": "17:15" },
+  "reasoning": "Пользователь хочет знать когда выехать, чтобы успеть домой к 17:15"
+}
+
+👤: во сколько выехать чтобы быть на работе в 9?
+🤖: {
+  "action": "calculate_departure",
+  "data": { "to": "work", "arrival_time": "09:00" },
+  "reasoning": "Расчёт времени выезда до работы"
+}
+
+**Напоминания:**
+👤: напомни через 15 минут заказать кронштейны
+🤖: {
+  "action": "set_reminder",
+  "data": { "minutes": 15, "message": "заказать кронштейны" },
+  "reasoning": "Пользователь просит напомнить через 15 минут"
+}
+
+👤: напомни в 18:00 позвонить жене
+🤖: {
+  "action": "set_reminder",
+  "data": { "time": "18:00", "message": "позвонить жене" },
+  "reasoning": "Напоминание на конкретное время"
+}
+
+👤: напомни завтра в 9 утра про встречу
+🤖: {
+  "action": "set_reminder",
+  "data": { "date": "tomorrow", "time": "09:00", "message": "встреча" },
+  "reasoning": "Напоминание на завтра"
+}
+
 **Сохранение информации:**
 👤: Санкт-Петербург, Ленина 10
 🤖: {
@@ -287,10 +326,10 @@ export interface PersonalAssistantRequest {
     | 'get_full_project' | 'search_data' | 'get_analytics'
     | 'create_task' | 'update_task'
     // Personal actions
-    | 'get_weather' | 'get_route' | 'get_traffic'
+    | 'get_weather' | 'get_route' | 'calculate_departure' | 'get_traffic'
     | 'get_family' | 'get_events' | 'suggest_gift'
     | 'add_family_member' | 'add_event'
-    | 'save_preference'
+    | 'save_preference' | 'set_reminder'
     // Proactive actions
     | 'ask_question' | 'morning_brief' | 'remind_event'
     | 'unknown';
@@ -541,6 +580,161 @@ async function executePersonalAction(
           const departureTime = calculateDepartureTime(intent.data.arrival_time, durationMin);
           result += `\n\n⏰ Чтобы приехать к ${intent.data.arrival_time}, выезжай в **${departureTime}**`;
         }
+
+        break;
+      }
+
+      // ========== РАСЧЁТ ВРЕМЕНИ ВЫЕЗДА ==========
+      case 'calculate_departure': {
+        const { data: profile } = await getUserProfile(userId);
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем текущую геолокацию
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
+        
+        const arrivalTime = intent.data?.arrival_time;
+        if (!arrivalTime) {
+          result = '❓ К какому времени тебе нужно приехать?';
+          break;
+        }
+        
+        // Резолвим адрес назначения
+        let rawTo = intent.data?.to;
+        if (rawTo === 'home') rawTo = profile?.home_address;
+        if (rawTo === 'work') rawTo = profile?.work_address;
+        
+        if (!rawTo) {
+          result = '❓ Куда тебе нужно приехать?';
+          break;
+        }
+        
+        // Определяем откуда
+        let fromGeo: { lat: number; lon: number } | null = null;
+        let fromAddress = 'Текущая позиция';
+        
+        if (currentLocation) {
+          fromGeo = { lat: currentLocation.latitude, lon: currentLocation.longitude };
+          fromAddress = currentLocation.address || 'Твоя позиция';
+        } else if (profile?.home_address) {
+          const { data: geo } = await geocodeAddress(profile.home_address);
+          fromGeo = geo;
+          fromAddress = profile.home_address;
+        }
+        
+        if (!fromGeo) {
+          result = '❓ Не знаю откуда ты едешь. Расшарь геопозицию или скажи где ты сейчас.';
+          break;
+        }
+        
+        const { data: toGeo } = await geocodeAddress(rawTo);
+        if (!toGeo) {
+          result = `Не смог найти адрес: ${rawTo}`;
+          break;
+        }
+        
+        const { data: route, error } = await calculateRoute(
+          fromGeo.lat, fromGeo.lon,
+          toGeo.lat, toGeo.lon
+        );
+        
+        if (error || !route) {
+          result = `Ошибка расчёта маршрута: ${error}`;
+          break;
+        }
+        
+        const durationMin = Math.ceil(route.duration_in_traffic / 60);
+        const departureTime = calculateDepartureTime(arrivalTime, durationMin);
+        const distanceKm = (route.distance / 1000).toFixed(1);
+        
+        result = `🚗 **Расчёт времени выезда**
+
+📍 Откуда: ${fromAddress}
+🏁 Куда: ${rawTo}
+📏 Расстояние: ${distanceKm} км
+⏱️ Время в пути: ~${durationMin} мин
+
+⏰ **Выезжай в ${departureTime}**, чтобы быть на месте к ${arrivalTime}
+
+💡 _Учтены текущие пробки. Лучше выехать на 5-10 мин раньше на всякий случай._`;
+
+        break;
+      }
+
+      // ========== НАПОМИНАНИЯ ==========
+      case 'set_reminder': {
+        const message = intent.data?.message;
+        if (!message) {
+          result = '❓ О чём тебе напомнить?';
+          break;
+        }
+        
+        // Вычисляем время напоминания
+        let remindAt: Date;
+        const now = new Date();
+        
+        if (intent.data?.minutes) {
+          // "через 15 минут"
+          remindAt = new Date(now.getTime() + intent.data.minutes * 60 * 1000);
+        } else if (intent.data?.time) {
+          // "в 18:00"
+          const [hours, minutes] = intent.data.time.split(':').map(Number);
+          remindAt = new Date(now);
+          remindAt.setHours(hours, minutes, 0, 0);
+          
+          // Если время уже прошло сегодня — ставим на завтра
+          if (remindAt <= now) {
+            remindAt.setDate(remindAt.getDate() + 1);
+          }
+          
+          // Если указана дата "tomorrow"
+          if (intent.data?.date === 'tomorrow') {
+            remindAt.setDate(now.getDate() + 1);
+            remindAt.setHours(hours, minutes, 0, 0);
+          }
+        } else {
+          result = '❓ Когда напомнить? Укажи время (в 18:00) или интервал (через 15 минут).';
+          break;
+        }
+        
+        // Получаем telegram_chat_id из контекста
+        const { data: contextList } = await getContext(userId);
+        const chatIdCtx = contextList?.find(c => c.key === 'telegram_chat_id');
+        const telegramChatId = chatIdCtx?.value;
+        
+        if (!telegramChatId) {
+          result = '⚠️ Не могу установить напоминание — не знаю твой Telegram chat ID.';
+          break;
+        }
+        
+        // Сохраняем в БД
+        const { error } = await supabase
+          .from('user_reminders')
+          .insert({
+            user_id: userId,
+            telegram_chat_id: telegramChatId,
+            message: message,
+            remind_at: remindAt.toISOString(),
+            sent: false
+          });
+        
+        if (error) {
+          consoleLog('error', 'Failed to save reminder', { error: error.message });
+          result = '❌ Не удалось сохранить напоминание. Попробуй ещё раз.';
+          break;
+        }
+        
+        // Форматируем время для ответа
+        const timeStr = remindAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = remindAt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        const isToday = remindAt.toDateString() === now.toDateString();
+        
+        result = `⏰ **Напоминание установлено!**
+
+📝 ${message}
+🕐 ${isToday ? 'Сегодня' : dateStr} в ${timeStr}
+
+Я напомню тебе в Telegram! 🔔`;
 
         break;
       }
