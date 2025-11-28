@@ -225,6 +225,34 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   }
 }
 
+👤: сколько ехать до дома?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "home" },
+  "reasoning": "Пользователь спрашивает маршрут до дома. to=home означает домашний адрес. from не указан - значит едет от текущей позиции."
+}
+
+👤: сколько ехать от дома до работы?
+🤖: {
+  "action": "get_route",
+  "data": { "from": "home", "to": "work" },
+  "reasoning": "Маршрут от дома до работы"
+}
+
+👤: как добраться до Невского проспекта?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "Невский проспект, Санкт-Петербург" },
+  "reasoning": "Маршрут до конкретного адреса от текущей позиции"
+}
+
+👤: сколько ехать до Пулково?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "Аэропорт Пулково, Санкт-Петербург" },
+  "reasoning": "Маршрут до аэропорта"
+}
+
 **Сохранение информации:**
 👤: Санкт-Петербург, Ленина 10
 🤖: {
@@ -443,21 +471,43 @@ async function executePersonalAction(
         const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
         const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
         
+        // Резолвим специальные значения "home" и "work"
+        let rawFrom = intent.data?.from;
+        let rawTo = intent.data?.to;
+        
+        // "home" → домашний адрес из профиля
+        if (rawFrom === 'home') rawFrom = profile?.home_address;
+        if (rawTo === 'home') rawTo = profile?.home_address;
+        
+        // "work" → рабочий адрес из профиля
+        if (rawFrom === 'work') rawFrom = profile?.work_address;
+        if (rawTo === 'work') rawTo = profile?.work_address;
+        
         // Определяем откуда
-        let fromAddress = intent.data?.from || profile?.home_address;
+        let fromAddress = rawFrom;
         let fromGeo: { lat: number; lon: number } | null = null;
         
-        // Если есть "отсюда", "от меня", "моя позиция" - используем текущую геолокацию
-        const useCurrentLocation = !intent.data?.from && currentLocation;
-        if (useCurrentLocation) {
+        // Если from не указан и есть геолокация - используем её
+        if (!fromAddress && currentLocation) {
           fromGeo = { lat: currentLocation.latitude, lon: currentLocation.longitude };
           fromAddress = currentLocation.address || 'Твоя позиция';
+          consoleLog('info', '📍 Using current location as FROM', { fromAddress });
         }
         
-        const toAddress = intent.data?.to;
+        // Если from всё ещё не указан - пробуем домашний адрес
+        if (!fromAddress) {
+          fromAddress = profile?.home_address;
+        }
+        
+        const toAddress = rawTo;
 
         if (!fromAddress || !toAddress) {
-          result = '❓ Укажи откуда и куда нужно ехать. Например: "Сколько ехать от дома до работы"\n\n💡 Или расшарь геопозицию и скажи "как доехать до Невского проспекта"';
+          // Подсказка в зависимости от того, чего не хватает
+          if (!toAddress) {
+            result = '❓ Куда тебе нужно ехать? Укажи адрес или место.';
+          } else if (!fromAddress) {
+            result = '❓ Откуда едем? Расшарь геолокацию или укажи адрес.\n\n💡 Или скажи где ты живёшь, чтобы я запомнил.';
+          }
           break;
         }
 
