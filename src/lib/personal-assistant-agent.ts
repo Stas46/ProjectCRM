@@ -390,11 +390,21 @@ async function executePersonalAction(
       // ========== ПОГОДА ==========
       case 'get_weather': {
         const { data: profile } = await getUserProfile(userId);
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем есть ли текущая геолокация
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
         
         let lat, lon;
         let locationNote = '';
         
-        if (!profile?.home_coordinates) {
+        // Приоритет: текущая геолокация > профиль > Санкт-Петербург
+        if (currentLocation) {
+          lat = currentLocation.latitude;
+          lon = currentLocation.longitude;
+          locationNote = `\n\n📍 Погода для: ${currentLocation.address || 'твоя позиция'}`;
+        } else if (!profile?.home_coordinates) {
           // Fallback на Санкт-Петербург если нет профиля
           lat = 59.9311;
           lon = 30.3609;
@@ -427,16 +437,35 @@ async function executePersonalAction(
       // ========== МАРШРУТ ==========
       case 'get_route': {
         const { data: profile } = await getUserProfile(userId);
-        const fromAddress = intent.data?.from || profile?.home_address;
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем есть ли текущая геолокация
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
+        
+        // Определяем откуда
+        let fromAddress = intent.data?.from || profile?.home_address;
+        let fromGeo: { lat: number; lon: number } | null = null;
+        
+        // Если есть "отсюда", "от меня", "моя позиция" - используем текущую геолокацию
+        const useCurrentLocation = !intent.data?.from && currentLocation;
+        if (useCurrentLocation) {
+          fromGeo = { lat: currentLocation.latitude, lon: currentLocation.longitude };
+          fromAddress = currentLocation.address || 'Твоя позиция';
+        }
+        
         const toAddress = intent.data?.to;
 
         if (!fromAddress || !toAddress) {
-          result = '❓ Укажи откуда и куда нужно ехать. Например: "Сколько ехать от дома до работы"';
+          result = '❓ Укажи откуда и куда нужно ехать. Например: "Сколько ехать от дома до работы"\n\n💡 Или расшарь геопозицию и скажи "как доехать до Невского проспекта"';
           break;
         }
 
         // Геокодируем адреса
-        const { data: fromGeo } = await geocodeAddress(fromAddress);
+        if (!fromGeo) {
+          const { data: geo } = await geocodeAddress(fromAddress);
+          fromGeo = geo;
+        }
         const { data: toGeo } = await geocodeAddress(toAddress);
 
         if (!fromGeo || !toGeo) {

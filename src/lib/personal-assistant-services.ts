@@ -243,8 +243,8 @@ function getTrafficColor(level: number): string {
 }
 
 /**
- * Calculate route between two points (simplified - distance only)
- * Uses Haversine formula for straight-line distance
+ * Calculate route between two points using OSRM (бесплатный)
+ * https://project-osrm.org - Open Source Routing Machine
  */
 export async function calculateRoute(
   fromLat: number,
@@ -253,43 +253,89 @@ export async function calculateRoute(
   toLon: number
 ): Promise<{ data: RouteData | null; error: string | null }> {
   try {
-    // Calculate distance using Haversine formula
-    const R = 6371; // Earth radius in km
-    const dLat = (toLat - fromLat) * Math.PI / 180;
-    const dLon = (toLon - fromLon) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = Math.round(R * c);
+    // OSRM - бесплатный routing API
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false&steps=true`;
     
-    // Estimate duration: ~40 km/h average in city
-    const duration = Math.round(distance / 40 * 60); // minutes
+    const response = await fetch(url);
+    const data = await response.json();
     
-    // Estimate traffic delay based on time of day
-    const hour = new Date().getHours();
-    let trafficMultiplier = 1.0;
-    if (hour >= 7 && hour <= 10) trafficMultiplier = 1.4; // morning rush
-    else if (hour >= 17 && hour <= 20) trafficMultiplier = 1.5; // evening rush
-    else if (hour >= 11 && hour <= 16) trafficMultiplier = 1.2; // midday
+    if (data.code === 'Ok' && data.routes?.[0]) {
+      const route = data.routes[0];
+      const distance = Math.round(route.distance / 1000 * 10) / 10; // км с 1 знаком
+      const duration = Math.round(route.duration / 60); // минуты
+      
+      // Оценка пробок по времени суток
+      const hour = new Date().getHours();
+      let trafficMultiplier = 1.0;
+      if (hour >= 7 && hour <= 10) trafficMultiplier = 1.4;
+      else if (hour >= 17 && hour <= 20) trafficMultiplier = 1.5;
+      else if (hour >= 11 && hour <= 16) trafficMultiplier = 1.2;
+      
+      // Шаги маршрута
+      const steps = route.legs?.[0]?.steps?.map((step: any) => ({
+        instruction: step.maneuver?.type || 'Следуй',
+        distance: Math.round(step.distance),
+      })) || [];
+      
+      return {
+        data: {
+          duration,
+          duration_in_traffic: Math.round(duration * trafficMultiplier),
+          distance,
+          steps,
+        },
+        error: null
+      };
+    }
     
-    return {
-      data: {
-        duration,
-        duration_in_traffic: Math.round(duration * trafficMultiplier),
-        distance,
-        steps: [{
-          instruction: 'Примерный расчет по прямой',
-          distance: distance * 1000,
-        }],
-      },
-      error: null
-    };
+    // Fallback на Haversine если OSRM не ответил
+    console.log('OSRM fallback to Haversine:', data.code);
+    return calculateRouteFallback(fromLat, fromLon, toLat, toLon);
+    
   } catch (error) {
-    console.error('Routing error:', error);
-    return { data: null, error: 'Не удалось рассчитать расстояние' };
+    console.error('OSRM error, using fallback:', error);
+    return calculateRouteFallback(fromLat, fromLon, toLat, toLon);
   }
+}
+
+/**
+ * Fallback: Calculate route using Haversine formula
+ */
+function calculateRouteFallback(
+  fromLat: number,
+  fromLon: number,
+  toLat: number,
+  toLon: number
+): { data: RouteData | null; error: string | null } {
+  const R = 6371;
+  const dLat = (toLat - fromLat) * Math.PI / 180;
+  const dLon = (toLon - fromLon) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const straightDistance = R * c;
+  
+  // Реальное расстояние обычно в 1.3-1.5 раза больше прямого
+  const distance = Math.round(straightDistance * 1.4 * 10) / 10;
+  const duration = Math.round(distance / 35 * 60); // ~35 км/ч в городе
+  
+  const hour = new Date().getHours();
+  let trafficMultiplier = 1.0;
+  if (hour >= 7 && hour <= 10) trafficMultiplier = 1.4;
+  else if (hour >= 17 && hour <= 20) trafficMultiplier = 1.5;
+  else if (hour >= 11 && hour <= 16) trafficMultiplier = 1.2;
+  
+  return {
+    data: {
+      duration,
+      duration_in_traffic: Math.round(duration * trafficMultiplier),
+      distance,
+      steps: [{ instruction: 'Приблизительный расчёт', distance: distance * 1000 }],
+    },
+    error: null
+  };
 }
 
 /**
@@ -323,14 +369,42 @@ export function calculateDepartureTime(arrivalTime: string, durationMinutes: num
 }
 
 /**
- * Convert address to coordinates (simplified - returns null for now)
- * User should provide coordinates or use saved locations
+ * Convert address to coordinates using Nominatim (бесплатный)
+ * https://nominatim.org - OpenStreetMap geocoding
  */
 export async function geocodeAddress(address: string): Promise<{ data: GeocodingData | null; error: string | null }> {
-  // For now, geocoding is disabled
-  // User can save locations with coordinates in user_locations table
-  return { 
-    data: null, 
-    error: 'Геокодирование временно отключено. Сохрани адрес с координатами в профиле.' 
-  };
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=ru`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'GlazingCRM/1.0 (personal-assistant)'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (data.length > 0) {
+      const result = data[0];
+      return {
+        data: {
+          lat: parseFloat(result.lat),
+          lon: parseFloat(result.lon),
+          formatted_address: result.display_name
+        },
+        error: null
+      };
+    }
+    
+    return { 
+      data: null, 
+      error: 'Адрес не найден. Попробуй указать более полный адрес.' 
+    };
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return { 
+      data: null, 
+      error: 'Ошибка геокодирования. Попробуй позже.' 
+    };
+  }
 }

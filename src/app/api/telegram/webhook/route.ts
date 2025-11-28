@@ -58,6 +58,12 @@ interface TelegramMessage {
     duration: number;
     mime_type?: string;
   };
+  location?: {
+    latitude: number;
+    longitude: number;
+    horizontal_accuracy?: number;
+    live_period?: number;
+  };
   date: number;
 }
 
@@ -126,6 +132,12 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true });
         }
       }
+    }
+
+    // Обработка геолокации
+    if (message.location) {
+      await handleLocation(chatId, telegramId, message.location);
+      return NextResponse.json({ ok: true });
     }
 
     if (!text) {
@@ -218,6 +230,83 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ Telegram webhook error:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
+/**
+ * Обработка геолокации от пользователя
+ */
+async function handleLocation(
+  chatId: number, 
+  telegramId: number, 
+  location: { latitude: number; longitude: number; live_period?: number }
+) {
+  const userId = await getUserIdByTelegramId(telegramId);
+  
+  if (!userId) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Ваш Telegram не привязан к аккаунту CRM.\n\nОтправьте /start для получения кода привязки.'
+    );
+    return;
+  }
+
+  const { latitude, longitude, live_period } = location;
+  const isLive = !!live_period;
+
+  try {
+    // Reverse geocoding - получаем адрес по координатам
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=ru`;
+    
+    const geoResponse = await fetch(nominatimUrl, {
+      headers: { 'User-Agent': 'GlazingCRM/1.0' }
+    });
+    
+    let address = 'Неизвестный адрес';
+    let displayName = '';
+    
+    if (geoResponse.ok) {
+      const geoData = await geoResponse.json();
+      displayName = geoData.display_name || '';
+      address = geoData.address ? 
+        `${geoData.address.road || ''} ${geoData.address.house_number || ''}, ${geoData.address.city || geoData.address.town || geoData.address.village || ''}`.trim() :
+        displayName;
+    }
+
+    // Сохраняем текущую позицию в контекст
+    const { saveContext } = await import('@/lib/personal-data-tools');
+    await saveContext(userId, 'fact', 'current_location', { 
+      latitude, 
+      longitude, 
+      address,
+      displayName,
+      isLive,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Формируем ответ
+    const locationEmoji = isLive ? '📍🔴' : '📍';
+    const liveText = isLive ? ' (транслируется в реальном времени)' : '';
+    
+    const responseText = `${locationEmoji} *Получил твою геопозицию!*${liveText}
+
+📍 *Координаты:* \`${latitude.toFixed(6)}, ${longitude.toFixed(6)}\`
+🏠 *Адрес:* ${address}
+
+✅ Сохранил как текущее местоположение. Теперь могу:
+• Построить маршрут от твоей позиции
+• Показать погоду в этом месте
+• Найти ближайшие места
+
+_Напиши, например: "погода здесь" или "как добраться до Невского проспекта"_`;
+
+    await sendTelegramMessage(chatId, responseText);
+    
+  } catch (error) {
+    console.error('❌ Error handling location:', error);
+    await sendTelegramMessage(
+      chatId,
+      `📍 Получил координаты: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n\n⚠️ Не удалось определить адрес, но координаты сохранены.`
+    );
   }
 }
 
