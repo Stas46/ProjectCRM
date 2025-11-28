@@ -252,6 +252,8 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 
 export interface PersonalAssistantRequest {
   action: 
+    // Simple chat (AI knows the answer)
+    | 'chat'
     // CRM actions
     | 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' 
     | 'get_full_project' | 'search_data' | 'get_analytics'
