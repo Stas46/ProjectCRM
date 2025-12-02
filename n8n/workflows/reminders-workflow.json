@@ -20,18 +20,51 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, telegram_chat_id, message FROM user_reminders WHERE sent = false AND remind_at <= NOW() LIMIT 10"
+        "method": "GET",
+        "url": "https://fpnugtlchxigwpqwiczc.supabase.co/rest/v1/user_reminders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,telegram_chat_id,message"
+            },
+            {
+              "name": "sent",
+              "value": "eq.false"
+            },
+            {
+              "name": "remind_at",
+              "value": "lte.{{ $now.toISO() }}"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$credentials.httpHeaderAuth.value}}"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "get-pending-reminders",
       "name": "Get Pending Reminders",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [400, 300],
       "credentials": {
-        "supabaseApi": {
-          "id": "1",
-          "name": "Supabase Account"
+        "httpHeaderAuth": {
+          "id": "supabase-key",
+          "name": "Supabase Service Key"
         }
       }
     },
@@ -46,11 +79,11 @@
           "conditions": [
             {
               "id": "check-has-reminders",
-              "leftValue": "={{ $json.length }}",
-              "rightValue": 0,
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
               "operator": {
-                "type": "number",
-                "operation": "gt"
+                "type": "string",
+                "operation": "exists"
               }
             }
           ],
@@ -66,7 +99,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.telegram_chat_id }}",
-        "text": "🔔 **Напоминание!**\n\n{{ $json.message }}",
+        "text": "🔔 *Напоминание!*\n\n{{ $json.message }}",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
@@ -78,40 +111,67 @@
       "position": [800, 200],
       "credentials": {
         "telegramApi": {
-          "id": "2",
+          "id": "telegram-bot",
           "name": "Telegram Bot"
         }
       }
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "user_reminders",
-        "filterType": "string",
-        "filterString": "id=eq.{{ $json.id }}",
-        "dataToSend": "defineBelow",
-        "fieldsUi": {
-          "fieldValues": [
+        "method": "PATCH",
+        "url": "https://fpnugtlchxigwpqwiczc.supabase.co/rest/v1/user_reminders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
             {
-              "fieldName": "sent",
-              "fieldValue": "true"
-            },
-            {
-              "fieldName": "sent_at",
-              "fieldValue": "={{ $now.toISO() }}"
+              "name": "id",
+              "value": "eq.{{ $json.id }}"
             }
           ]
-        }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$credentials.httpHeaderAuth.value}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "sent",
+              "value": "true"
+            },
+            {
+              "name": "sent_at",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "mark-as-sent",
       "name": "Mark as Sent",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [1000, 200],
       "credentials": {
-        "supabaseApi": {
-          "id": "1",
-          "name": "Supabase Account"
+        "httpHeaderAuth": {
+          "id": "supabase-key",
+          "name": "Supabase Service Key"
         }
       }
     }
@@ -166,7 +226,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "1",
+  "versionId": "2",
   "meta": {
     "instanceId": "glazing-crm"
   },
