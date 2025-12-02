@@ -1,7 +1,0 @@
-{
-  "scripts": {
-    "test:bot": "node test-bot.mjs",
-    "test:bot:interactive": "node test-bot.mjs interactive",
-    "test:bot:quick": "node test-bot-quick.mjs"
-  }
-}
