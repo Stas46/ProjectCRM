@@ -42,15 +42,15 @@
             },
             {
               "name": "subject",
-              "value": "=📄 Новый счет №{{$json.invoice.number}} от {{$json.invoice.supplier_name}}"
+              "value": "=📄 Новый счет №{{$json.number}} от {{$json.supplier_name}}"
             },
             {
               "name": "message",
-              "value": "=Создан новый счет на сумму {{$json.invoice.total_amount}} руб."
+              "value": "=Создан новый счет на сумму {{$json.total_amount}} руб.\n\nНомер: {{$json.number}}\nПоставщик: {{$json.supplier_name}}\nДата: {{$json.date}}\nИНН: {{$json.supplier_inn || 'не указан'}}\n\nФайл: {{$json.file_url || 'не загружен'}}"
             },
             {
               "name": "html",
-              "value": "=<h2>Новый счет создан</h2><p><strong>Номер:</strong> {{$json.invoice.number}}</p><p><strong>Поставщик:</strong> {{$json.invoice.supplier_name}}</p><p><strong>Сумма:</strong> {{$json.invoice.total_amount}} руб.</p><p><strong>Дата:</strong> {{$json.invoice.date}}</p>"
+              "value": "=<h2 style='color: #1f2937;'>📄 Новый счет создан</h2><table style='border-collapse: collapse; width: 100%; max-width: 600px; margin: 20px 0; background: #f9fafb; border-radius: 8px; overflow: hidden;'><tr><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'><strong>Номер счета:</strong></td><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'>{{$json.number}}</td></tr><tr><td style='padding: 12px; border-bottom: 1px solid #e5e7eb;'><strong>Поставщик:</strong></td><td style='padding: 12px; border-bottom: 1px solid #e5e7eb;'>{{$json.supplier_name}}</td></tr><tr><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'><strong>ИНН:</strong></td><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'>{{$json.supplier_inn || 'не указан'}}</td></tr><tr><td style='padding: 12px; border-bottom: 1px solid #e5e7eb;'><strong>Сумма:</strong></td><td style='padding: 12px; border-bottom: 1px solid #e5e7eb;'><strong style='color: #2563eb; font-size: 1.3em;'>{{$json.total_amount}} руб.</strong></td></tr><tr><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'><strong>Дата:</strong></td><td style='padding: 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff;'>{{$json.date}}</td></tr><tr><td style='padding: 12px;'><strong>Файл:</strong></td><td style='padding: 12px;'>{{$json.file_url || 'не загружен'}}</td></tr></table><p style='margin-top: 20px; color: #6b7280; font-size: 0.9em;'>Счет создан в системе Glazing CRM<br>ID: {{$json.id}}</p>"
             }
           ]
         },

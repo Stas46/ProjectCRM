@@ -4,6 +4,7 @@
  */
 
 import OpenAI from 'openai';
+import { supabase } from './supabase';
 import {
   getUserProfile,
   getFamilyMembers,
@@ -59,39 +60,27 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 4. Запоминаешь важную информацию о пользователе
 5. Проактивно спрашиваешь и напоминаешь о важном
 
-КРИТИЧЕСКИЕ ПРАВИЛА РАСПОЗНАВАНИЯ:
+РАСПОЗНАВАНИЕ ЗАПРОСОВ - КЛЮЧЕВЫЕ СЛОВА:
 
-⚠️ ВНИМАНИЕ! Если сообщение содержит эти слова - ОБЯЗАТЕЛЬНО выбирай соответствующее действие:
+**CRM (всегда используй get_tasks/get_projects/get_invoices):**
+- "какие проекты", "покажи проекты", "мои проекты", "список проектов" → get_projects
+- "какие задачи", "покажи задачи", "мои задачи", "что делать" → get_tasks
+- "какие счета", "покажи счета", "счета", "инвойсы" → get_invoices
+- "найди [что-то]" → search_data
 
-**ПРОЕКТЫ (action: get_projects):**
-- "проект", "проекты", "какие проекты", "мои проекты", "покажи проекты", "список проектов"
-- ЛЮБОЕ сообщение со словом "проект" = get_projects
+**Погода (всегда используй get_weather):**
+- "какая погода", "погода", "температура", "на улице" → get_weather
 
-**ЗАДАЧИ (action: get_tasks):**  
-- "задач", "задачи", "задача", "какие задачи", "мои задачи", "что делать", "to do"
-- ЛЮБОЕ сообщение со словом "задач" = get_tasks
+**ЗАПРЕЩЕНО использовать ask_question для:**
+- ❌ "какие проекты?" → get_projects (НЕ ask_question!)
+- ❌ "какие задачи?" → get_tasks (НЕ ask_question!)
+- ❌ "какая погода?" → get_weather (НЕ ask_question!)
+- ❌ Любые прямые вопросы про CRM данные
 
-**СЧЕТА (action: get_invoices):**
-- "счёт", "счет", "счета", "инвойс", "оплата", "покажи счета"
-- ЛЮБОЕ сообщение со словом "счет/счёт" = get_invoices
-
-**ПОГОДА (action: get_weather):**
-- "погода", "погоду", "температура", "на улице", "градус"
-- ЛЮБОЕ сообщение со словом "погод" = get_weather
-
-**ПОИСК (action: search_data):**
-- "найди", "поиск", "ищи", "где находится"
-
-**CHAT (action: chat) - ТОЛЬКО для:**
-- Приветствия: "привет", "здравствуй", "добрый день"
-- Благодарности: "спасибо", "благодарю"
-- Прощания: "пока", "до свидания"
-- Общие разговоры БЕЗ запроса данных
-
-⛔ ЗАПРЕЩЕНО:
-- Использовать chat когда спрашивают про проекты/задачи/счета/погоду
-- Использовать ask_question для CRM запросов
-- Игнорировать ключевые слова выше
+**ask_question используй ТОЛЬКО когда:**
+- ✅ Нужна недостающая информация: "где работает жена?", "когда ДР?"
+- ✅ Проактивное предложение: "хочешь автоматическое утро?"
+- ✅ Уточнение некорректного запроса пользователя
 
 ДОСТУПНЫЕ ДЕЙСТВИЯ:
 
@@ -109,6 +98,8 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 **Личные:**
 - get_weather - погода сейчас и прогноз
 - get_route - маршрут и время в пути
+- calculate_departure - рассчитать когда выезжать чтобы быть в X к Y времени
+- set_reminder - установить напоминание (через N минут или в конкретное время)
 - get_traffic - уровень пробок
 - get_family - информация о семье
 - get_events - предстоящие события
@@ -143,38 +134,237 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 
 ФОРМАТ ОТВЕТА JSON:
 {
-  "action": "get_projects" | "get_tasks" | "get_invoices" | "get_weather" | "chat" | ...,
+  "action": "get_weather" | "get_route" | "get_family" | "ask_question" | "save_preference" | ...,
   "filters": {...},
-  "data": {"response": "текст ответа для chat"},
-  "reasoning": "что понял и почему делаю это"
+  "data": {...},
+  "reasoning": "что понял и почему делаю это",
+  "proactive_question": "вопрос пользователю" (если нужно что-то уточнить),
+  "memory_to_save": {"key": "value"} (что запомнить)
 }
 
-ПРИМЕРЫ:
+ПРИМЕРЫ ДИАЛОГОВ:
 
-👤: какие проекты?
-🤖: {"action": "get_projects", "filters": {}, "reasoning": "Запрос проектов"}
+**ВАЖНО: Когда знаешь ответ - отвечай сразу!**
+👤: как меня зовут?
+🤖: {
+  "action": "chat",
+  "data": { "answer": "Тебя зовут Станислав!" },
+  "reasoning": "Знаю имя из профиля - просто отвечаю"
+}
+
+👤: где я живу?
+🤖: {
+  "action": "chat",
+  "data": { "answer": "Ты живёшь в Санкт-Петербурге." },
+  "reasoning": "Знаю город из профиля - отвечаю"
+}
+
+👤: кто моя жена?
+🤖: {
+  "action": "chat",
+  "data": { "answer": "Твою жену зовут Наталья. Хочешь что-то о ней узнать или напомнить о дне рождения?" },
+  "reasoning": "Знаю из базы семьи - отвечаю и предлагаю помощь"
+}
+
+**CRM запросы:**
+👤: какие у меня проекты?
+🤖: {
+  "action": "get_projects",
+  "filters": {},
+  "reasoning": "Пользователь спрашивает про проекты - показываю список из CRM"
+}
 
 👤: какие задачи?
-🤖: {"action": "get_tasks", "filters": {}, "reasoning": "Запрос задач"}
+🤖: {
+  "action": "get_tasks",
+  "filters": {},
+  "reasoning": "Показать задачи пользователя"
+}
 
-👤: какие счета?
-🤖: {"action": "get_invoices", "filters": {}, "reasoning": "Запрос счетов"}
+👤: покажи только активные задачи
+🤖: {
+  "action": "get_tasks",
+  "filters": { "status": "in_progress" },
+  "reasoning": "Показать только задачи со статусом 'в работе'"
+}
 
-👤: какая погода?
-🤖: {"action": "get_weather", "filters": {}, "reasoning": "Запрос погоды"}
+👤: мне нужны только активные задачи
+🤖: {
+  "action": "get_tasks",
+  "filters": { "status": "in_progress" },
+  "reasoning": "Фильтрация по статусу - только активные (in_progress)"
+}
 
-👤: привет
-🤖: {"action": "chat", "data": {"response": "Привет! Чем могу помочь? 😊"}, "reasoning": "Приветствие"}
+👤: какие задачи не выполнены?
+🤖: {
+  "action": "get_tasks",
+  "filters": { "exclude_done": true },
+  "reasoning": "Показать задачи кроме выполненных"
+}
+
+👤: 3 задача отметь выполнена
+🤖: {
+  "action": "update_task",
+  "data": { "task_index": 3, "status": "done" },
+  "reasoning": "Пользователь просит отметить задачу #3 как выполненную"
+}
+
+👤: задачу 5 пометь готово
+🤖: {
+  "action": "update_task",
+  "data": { "task_index": 5, "status": "done" },
+  "reasoning": "Отметить задачу #5 выполненной"
+}
+
+👤: первую задачу в работу
+🤖: {
+  "action": "update_task",
+  "data": { "task_index": 1, "status": "in_progress" },
+  "reasoning": "Изменить статус задачи #1 на 'в работе'"
+}
+
+👤: покажи счета
+🤖: {
+  "action": "get_invoices",
+  "filters": {},
+  "reasoning": "Показать счета из CRM"
+}
 
 👤: найди проект школа
-🤖: {"action": "search_data", "data": {"query": "школа"}, "reasoning": "Поиск по слову школа"}
+🤖: {
+  "action": "search_data",
+  "data": { "query": "школа" },
+  "reasoning": "Поиск по ключевому слову 'школа' в CRM"
+}
 
-ВАЖНО: Если в сообщении есть слова "проект/задач/счет/погод" - ОБЯЗАТЕЛЬНО выбирай соответствующий action!
+**Проактивные вопросы:**
+👤: Завтра еду к жене на работу
+🤖: {
+  "action": "ask_question",
+  "data": {
+    "question": "А где работает твоя жена? Если скажешь адрес, смогу рассчитывать маршруты и предупреждать о пробках.",
+    "topic": "wife_work_address"
+  },
+  "reasoning": "Не знаю адрес работы жены, нужно спросить и запомнить"
+}
 
-СТИЛЬ:
+👤: У дочки скоро ДР
+🤖: {
+  "action": "ask_question",
+  "data": {
+    "question": "Когда именно день рождения у дочки? И сколько ей будет лет? Запишу, чтобы напомнить заранее.",
+    "topic": "daughter_birthday"
+  },
+  "reasoning": "Пользователь упомянул дочку, но её нет в базе семьи"
+}
+
+**Погода и маршруты:**
+👤: Какая погода?
+🤖: {
+  "action": "get_weather",
+  "filters": {},
+  "reasoning": "Показать погоду",
+  "memory_to_save": {
+    "pattern_weather_check": "user often asks weather in morning",
+    "last_weather_request": "2025-11-27T08:30:00"
+  }
+}
+
+👤: сколько ехать до дома?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "home" },
+  "reasoning": "Пользователь спрашивает маршрут до дома. to=home означает домашний адрес. from не указан - значит едет от текущей позиции."
+}
+
+👤: сколько ехать до работы?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "work" },
+  "reasoning": "Пользователь спрашивает маршрут до работы. to=work означает рабочий адрес. from не указан - используется текущая геолокация."
+}
+
+👤: сколько мне ехать до работы
+🤖: {
+  "action": "get_route",
+  "data": { "to": "work" },
+  "reasoning": "Маршрут до работы от текущей позиции"
+}
+
+👤: сколько ехать от дома до работы?
+🤖: {
+  "action": "get_route",
+  "data": { "from": "home", "to": "work" },
+  "reasoning": "Маршрут от дома до работы"
+}
+
+👤: как добраться до Невского проспекта?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "Невский проспект, Санкт-Петербург" },
+  "reasoning": "Маршрут до конкретного адреса от текущей позиции"
+}
+
+👤: сколько ехать до Пулково?
+🤖: {
+  "action": "get_route",
+  "data": { "to": "Аэропорт Пулково, Санкт-Петербург" },
+  "reasoning": "Маршрут до аэропорта"
+}
+
+👤: мне надо быть дома в 17:15, когда выезжать?
+🤖: {
+  "action": "calculate_departure",
+  "data": { "to": "home", "arrival_time": "17:15" },
+  "reasoning": "Пользователь хочет знать когда выехать, чтобы успеть домой к 17:15"
+}
+
+👤: во сколько выехать чтобы быть на работе в 9?
+🤖: {
+  "action": "calculate_departure",
+  "data": { "to": "work", "arrival_time": "09:00" },
+  "reasoning": "Расчёт времени выезда до работы"
+}
+
+**Напоминания:**
+👤: напомни через 15 минут заказать кронштейны
+🤖: {
+  "action": "set_reminder",
+  "data": { "minutes": 15, "message": "заказать кронштейны" },
+  "reasoning": "Пользователь просит напомнить через 15 минут"
+}
+
+👤: напомни в 18:00 позвонить жене
+🤖: {
+  "action": "set_reminder",
+  "data": { "time": "18:00", "message": "позвонить жене" },
+  "reasoning": "Напоминание на конкретное время"
+}
+
+👤: напомни завтра в 9 утра про встречу
+🤖: {
+  "action": "set_reminder",
+  "data": { "date": "tomorrow", "time": "09:00", "message": "встреча" },
+  "reasoning": "Напоминание на завтра"
+}
+
+**Сохранение информации:**
+👤: Санкт-Петербург, Ленина 10
+🤖: {
+  "action": "save_preference",
+  "data": {
+    "key": "home_address",
+    "value": "Санкт-Петербург, Ленина 10"
+  },
+  "reasoning": "Пользователь назвал адрес, сохраняю как домашний",
+  "proactive_question": "Это твой домашний адрес? Или рабочий?"
+}
+
+ЕСТЕСТВЕННОСТЬ:
 - Общайся по-дружески, но уважительно
 - Используй эмодзи в ответах (☀️🚗📅💡)
 - Предлагай помощь: "Хочешь, помогу с этим?"
+- Признавайся если не знаешь: "Не знаю где ты живёшь, подскажешь?"
 
 ВАЖНО: всегда возвращай валидный JSON!
 `.trim();
@@ -185,19 +375,19 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 
 export interface PersonalAssistantRequest {
   action: 
+    // Simple chat (AI knows the answer)
+    | 'chat'
     // CRM actions
     | 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' 
     | 'get_full_project' | 'search_data' | 'get_analytics'
     | 'create_task' | 'update_task'
     // Personal actions
-    | 'get_weather' | 'get_route' | 'get_traffic'
+    | 'get_weather' | 'get_route' | 'calculate_departure' | 'get_traffic'
     | 'get_family' | 'get_events' | 'suggest_gift'
     | 'add_family_member' | 'add_event'
-    | 'save_preference'
+    | 'save_preference' | 'set_reminder'
     // Proactive actions
     | 'ask_question' | 'morning_brief' | 'remind_event'
-    // Chat action (простое общение)
-    | 'chat'
     | 'unknown';
   filters?: any;
   data?: any;
@@ -313,14 +503,31 @@ async function executePersonalAction(
     let result = '';
 
     switch (intent.action) {
+      // ========== ПРОСТОЙ ОТВЕТ (без выполнения действий) ==========
+      case 'chat': {
+        // AI сам знает ответ - просто возвращаем его
+        result = intent.data?.answer || intent.data?.message || 'Хм, что-то не так с моим ответом...';
+        break;
+      }
+
       // ========== ПОГОДА ==========
       case 'get_weather': {
         const { data: profile } = await getUserProfile(userId);
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем есть ли текущая геолокация
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
         
         let lat, lon;
         let locationNote = '';
         
-        if (!profile?.home_coordinates) {
+        // Приоритет: текущая геолокация > профиль > Санкт-Петербург
+        if (currentLocation) {
+          lat = currentLocation.latitude;
+          lon = currentLocation.longitude;
+          locationNote = `\n\n📍 Погода для: ${currentLocation.address || 'твоя позиция'}`;
+        } else if (!profile?.home_coordinates) {
           // Fallback на Санкт-Петербург если нет профиля
           lat = 59.9311;
           lon = 30.3609;
@@ -353,16 +560,57 @@ async function executePersonalAction(
       // ========== МАРШРУТ ==========
       case 'get_route': {
         const { data: profile } = await getUserProfile(userId);
-        const fromAddress = intent.data?.from || profile?.home_address;
-        const toAddress = intent.data?.to;
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем есть ли текущая геолокация
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
+        
+        // Резолвим специальные значения "home" и "work"
+        let rawFrom = intent.data?.from;
+        let rawTo = intent.data?.to;
+        
+        // "home" → домашний адрес из профиля
+        if (rawFrom === 'home') rawFrom = profile?.home_address;
+        if (rawTo === 'home') rawTo = profile?.home_address;
+        
+        // "work" → рабочий адрес из профиля
+        if (rawFrom === 'work') rawFrom = profile?.work_address;
+        if (rawTo === 'work') rawTo = profile?.work_address;
+        
+        // Определяем откуда
+        let fromAddress = rawFrom;
+        let fromGeo: { lat: number; lon: number } | null = null;
+        
+        // Если from не указан и есть геолокация - используем её
+        if (!fromAddress && currentLocation) {
+          fromGeo = { lat: currentLocation.latitude, lon: currentLocation.longitude };
+          fromAddress = currentLocation.address || 'Твоя позиция';
+          consoleLog('info', '📍 Using current location as FROM', { fromAddress });
+        }
+        
+        // Если from всё ещё не указан - пробуем домашний адрес
+        if (!fromAddress) {
+          fromAddress = profile?.home_address;
+        }
+        
+        const toAddress = rawTo;
 
         if (!fromAddress || !toAddress) {
-          result = '❓ Укажи откуда и куда нужно ехать. Например: "Сколько ехать от дома до работы"';
+          // Подсказка в зависимости от того, чего не хватает
+          if (!toAddress) {
+            result = '❓ Куда тебе нужно ехать? Укажи адрес или место.';
+          } else if (!fromAddress) {
+            result = '❓ Откуда едем? Расшарь геолокацию или укажи адрес.\n\n💡 Или скажи где ты живёшь, чтобы я запомнил.';
+          }
           break;
         }
 
         // Геокодируем адреса
-        const { data: fromGeo } = await geocodeAddress(fromAddress);
+        if (!fromGeo) {
+          const { data: geo } = await geocodeAddress(fromAddress);
+          fromGeo = geo;
+        }
         const { data: toGeo } = await geocodeAddress(toAddress);
 
         if (!fromGeo || !toGeo) {
@@ -388,6 +636,161 @@ async function executePersonalAction(
           const departureTime = calculateDepartureTime(intent.data.arrival_time, durationMin);
           result += `\n\n⏰ Чтобы приехать к ${intent.data.arrival_time}, выезжай в **${departureTime}**`;
         }
+
+        break;
+      }
+
+      // ========== РАСЧЁТ ВРЕМЕНИ ВЫЕЗДА ==========
+      case 'calculate_departure': {
+        const { data: profile } = await getUserProfile(userId);
+        const { data: contextList } = await getContext(userId);
+        
+        // Проверяем текущую геолокацию
+        const currentLocationCtx = contextList?.find(c => c.key === 'current_location');
+        const currentLocation = currentLocationCtx?.value as { latitude: number; longitude: number; address: string } | undefined;
+        
+        const arrivalTime = intent.data?.arrival_time;
+        if (!arrivalTime) {
+          result = '❓ К какому времени тебе нужно приехать?';
+          break;
+        }
+        
+        // Резолвим адрес назначения
+        let rawTo = intent.data?.to;
+        if (rawTo === 'home') rawTo = profile?.home_address;
+        if (rawTo === 'work') rawTo = profile?.work_address;
+        
+        if (!rawTo) {
+          result = '❓ Куда тебе нужно приехать?';
+          break;
+        }
+        
+        // Определяем откуда
+        let fromGeo: { lat: number; lon: number } | null = null;
+        let fromAddress = 'Текущая позиция';
+        
+        if (currentLocation) {
+          fromGeo = { lat: currentLocation.latitude, lon: currentLocation.longitude };
+          fromAddress = currentLocation.address || 'Твоя позиция';
+        } else if (profile?.home_address) {
+          const { data: geo } = await geocodeAddress(profile.home_address);
+          fromGeo = geo;
+          fromAddress = profile.home_address;
+        }
+        
+        if (!fromGeo) {
+          result = '❓ Не знаю откуда ты едешь. Расшарь геопозицию или скажи где ты сейчас.';
+          break;
+        }
+        
+        const { data: toGeo } = await geocodeAddress(rawTo);
+        if (!toGeo) {
+          result = `Не смог найти адрес: ${rawTo}`;
+          break;
+        }
+        
+        const { data: route, error } = await calculateRoute(
+          fromGeo.lat, fromGeo.lon,
+          toGeo.lat, toGeo.lon
+        );
+        
+        if (error || !route) {
+          result = `Ошибка расчёта маршрута: ${error}`;
+          break;
+        }
+        
+        const durationMin = Math.ceil(route.duration_in_traffic / 60);
+        const departureTime = calculateDepartureTime(arrivalTime, durationMin);
+        const distanceKm = (route.distance / 1000).toFixed(1);
+        
+        result = `🚗 **Расчёт времени выезда**
+
+📍 Откуда: ${fromAddress}
+🏁 Куда: ${rawTo}
+📏 Расстояние: ${distanceKm} км
+⏱️ Время в пути: ~${durationMin} мин
+
+⏰ **Выезжай в ${departureTime}**, чтобы быть на месте к ${arrivalTime}
+
+💡 _Учтены текущие пробки. Лучше выехать на 5-10 мин раньше на всякий случай._`;
+
+        break;
+      }
+
+      // ========== НАПОМИНАНИЯ ==========
+      case 'set_reminder': {
+        const message = intent.data?.message;
+        if (!message) {
+          result = '❓ О чём тебе напомнить?';
+          break;
+        }
+        
+        // Вычисляем время напоминания
+        let remindAt: Date;
+        const now = new Date();
+        
+        if (intent.data?.minutes) {
+          // "через 15 минут"
+          remindAt = new Date(now.getTime() + intent.data.minutes * 60 * 1000);
+        } else if (intent.data?.time) {
+          // "в 18:00"
+          const [hours, minutes] = intent.data.time.split(':').map(Number);
+          remindAt = new Date(now);
+          remindAt.setHours(hours, minutes, 0, 0);
+          
+          // Если время уже прошло сегодня — ставим на завтра
+          if (remindAt <= now) {
+            remindAt.setDate(remindAt.getDate() + 1);
+          }
+          
+          // Если указана дата "tomorrow"
+          if (intent.data?.date === 'tomorrow') {
+            remindAt.setDate(now.getDate() + 1);
+            remindAt.setHours(hours, minutes, 0, 0);
+          }
+        } else {
+          result = '❓ Когда напомнить? Укажи время (в 18:00) или интервал (через 15 минут).';
+          break;
+        }
+        
+        // Получаем telegram_chat_id из контекста
+        const { data: contextList } = await getContext(userId);
+        const chatIdCtx = contextList?.find(c => c.key === 'telegram_chat_id');
+        const telegramChatId = chatIdCtx?.value;
+        
+        if (!telegramChatId) {
+          result = '⚠️ Не могу установить напоминание — не знаю твой Telegram chat ID.';
+          break;
+        }
+        
+        // Сохраняем в БД
+        const { error } = await supabase
+          .from('user_reminders')
+          .insert({
+            user_id: userId,
+            telegram_chat_id: telegramChatId,
+            message: message,
+            remind_at: remindAt.toISOString(),
+            sent: false
+          });
+        
+        if (error) {
+          consoleLog('error', 'Failed to save reminder', { error: error.message });
+          result = '❌ Не удалось сохранить напоминание. Попробуй ещё раз.';
+          break;
+        }
+        
+        // Форматируем время для ответа
+        const timeStr = remindAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = remindAt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        const isToday = remindAt.toDateString() === now.toDateString();
+        
+        result = `⏰ **Напоминание установлено!**
+
+📝 ${message}
+🕐 ${isToday ? 'Сегодня' : dateStr} в ${timeStr}
+
+Я напомню тебе в Telegram! 🔔`;
 
         break;
       }
@@ -568,14 +971,50 @@ async function executePersonalAction(
           break;
         }
 
-        await saveContext(userId, 'preference', key, value, { source: 'user_said' });
-        result = `✅ Запомнил: ${key}`;
+        const { upsertUserProfile } = await import('./personal-data-tools');
 
-        // Если это адрес - геокодируем и сохраняем в профиль
+        // Маппинг ключей на поля профиля
+        const profileKeyMap: Record<string, string> = {
+          'user_name': 'full_name',
+          'name': 'full_name',
+          'имя': 'full_name',
+          'home_address': 'home_address',
+          'домашний_адрес': 'home_address',
+          'work_address': 'work_address',
+          'рабочий_адрес': 'work_address',
+          'birthday': 'birthday',
+          'день_рождения': 'birthday',
+          'car_plate': 'car_plate',
+          'номер_машины': 'car_plate',
+        };
+
+        // Сохраняем в контекст
+        const saveResult = await saveContext(userId, 'preference', key, value, { source: 'user_said' });
+        
+        if (!saveResult.success) {
+          consoleLog('error', 'Failed to save context', { key, error: saveResult.error });
+        }
+
+        // Если ключ относится к профилю — сохраняем также в user_profiles
+        const profileField = profileKeyMap[key.toLowerCase()];
+        if (profileField && typeof value === 'string') {
+          const profileResult = await upsertUserProfile(userId, {
+            [profileField]: value
+          } as any);
+          
+          if (profileResult.error) {
+            consoleLog('error', 'Failed to save to profile', { profileField, error: profileResult.error });
+          } else {
+            consoleLog('info', 'Saved to user_profiles', { profileField, value });
+          }
+        }
+
+        result = `✅ Запомнил: ${value}`;
+
+        // Если это адрес - геокодируем и сохраняем координаты
         if (key.includes('address') && typeof value === 'string') {
           const { data: geo } = await geocodeAddress(value);
           if (geo) {
-            const { upsertUserProfile } = await import('./personal-data-tools');
             await upsertUserProfile(userId, {
               [key]: value,
               [`${key.replace('_address', '_coordinates')}`]: { lat: geo.lat, lon: geo.lon }
@@ -588,16 +1027,48 @@ async function executePersonalAction(
 
       // ========== CRM: ЗАДАЧИ ==========
       case 'get_tasks': {
+        const filters = intent.filters || {};
         const { data: tasks } = await getUserTasks(userId, { limit: 20 });
+        
         if (!tasks || tasks.length === 0) {
           result = '📋 У тебя нет активных задач';
         } else {
-          result = `📋 **Твои задачи:**\n\n`;
-          tasks.slice(0, 10).forEach((t: any, i: number) => {
-            const priority = t.priority === 1 ? '🔴' : t.priority === 2 ? '🟡' : '🟢';
-            const status = t.status === 'in_progress' ? '▶️' : t.status === 'done' ? '✅' : '⏸️';
-            result += `${i + 1}. ${status} ${priority} ${t.title}\n`;
-          });
+          // Применяем фильтры
+          let filteredTasks = tasks;
+          
+          // Фильтр по статусу
+          if (filters.status) {
+            filteredTasks = filteredTasks.filter((t: any) => t.status === filters.status);
+          }
+          
+          // Исключить выполненные
+          if (filters.exclude_done) {
+            filteredTasks = filteredTasks.filter((t: any) => t.status !== 'done');
+          }
+          
+          if (filteredTasks.length === 0) {
+            if (filters.status === 'in_progress') {
+              result = '📋 Нет активных задач (в работе)';
+            } else {
+              result = '📋 Нет задач по твоему запросу';
+            }
+          } else {
+            const statusLabel = filters.status === 'in_progress' ? ' (активные)' : 
+                               filters.exclude_done ? ' (невыполненные)' : '';
+            result = `📋 **Твои задачи${statusLabel}:**\n\n`;
+            
+            // Сохраняем задачи в контекст для update_task
+            await saveContext(userId, 'recent_topic', 'last_tasks_list', 
+              filteredTasks.slice(0, 10).map((t: any) => ({ id: t.id, title: t.title })),
+              { ttlDays: 1 }
+            );
+            
+            filteredTasks.slice(0, 10).forEach((t: any, i: number) => {
+              const priority = t.priority === 1 ? '🔴' : t.priority === 2 ? '🟡' : '🟢';
+              const status = t.status === 'in_progress' ? '▶️' : t.status === 'done' ? '✅' : '⏸️';
+              result += `${i + 1}. ${status} ${priority} ${t.title}\n`;
+            });
+          }
         }
         break;
       }
@@ -725,6 +1196,83 @@ async function executePersonalAction(
         break;
       }
 
+      // ========== CRM: ОБНОВИТЬ ЗАДАЧУ ==========
+      case 'update_task': {
+        const taskIndex = intent.data?.task_index;
+        const newStatus = intent.data?.status;
+        
+        if (!taskIndex) {
+          result = '❌ Укажи номер задачи, например: "задачу 3 отметь выполненной"';
+          break;
+        }
+        
+        // Получаем список задач из контекста
+        const { data: contextList } = await getContext(userId);
+        const lastTasksCtx = contextList?.find(c => c.key === 'last_tasks_list');
+        const lastTasks = lastTasksCtx?.value as Array<{ id: string; title: string }> | undefined;
+        
+        if (!lastTasks || lastTasks.length === 0) {
+          // Если нет в контексте - получаем заново
+          const { data: tasks } = await getUserTasks(userId, { limit: 20 });
+          if (!tasks || tasks.length < taskIndex) {
+            result = '❌ Задача не найдена. Сначала запроси список задач.';
+            break;
+          }
+          const task = tasks[taskIndex - 1];
+          
+          const statusMap: Record<string, string> = {
+            'done': 'done',
+            'completed': 'done',
+            'выполнена': 'done',
+            'готово': 'done',
+            'in_progress': 'in_progress',
+            'в работе': 'in_progress',
+            'todo': 'todo',
+            'новая': 'todo'
+          };
+          
+          const mappedStatus = statusMap[newStatus?.toLowerCase()] || newStatus;
+          
+          const { error } = await updateTask(userId, task.id, { status: mappedStatus });
+          if (error) {
+            result = `❌ Ошибка: ${error}`;
+          } else {
+            const statusEmoji = mappedStatus === 'done' ? '✅' : mappedStatus === 'in_progress' ? '▶️' : '⏸️';
+            result = `${statusEmoji} Задача "${task.title}" обновлена!`;
+          }
+        } else {
+          // Используем задачи из контекста
+          if (taskIndex > lastTasks.length) {
+            result = `❌ Нет задачи с номером ${taskIndex}. Максимум: ${lastTasks.length}`;
+            break;
+          }
+          
+          const task = lastTasks[taskIndex - 1];
+          
+          const statusMap: Record<string, string> = {
+            'done': 'done',
+            'completed': 'done',
+            'выполнена': 'done',
+            'готово': 'done',
+            'in_progress': 'in_progress',
+            'в работе': 'in_progress',
+            'todo': 'todo',
+            'новая': 'todo'
+          };
+          
+          const mappedStatus = statusMap[newStatus?.toLowerCase()] || newStatus;
+          
+          const { error } = await updateTask(userId, task.id, { status: mappedStatus });
+          if (error) {
+            result = `❌ Ошибка: ${error}`;
+          } else {
+            const statusEmoji = mappedStatus === 'done' ? '✅' : mappedStatus === 'in_progress' ? '▶️' : '⏸️';
+            result = `${statusEmoji} Задача "${task.title}" обновлена!`;
+          }
+        }
+        break;
+      }
+
       // ========== ПРОАКТИВНЫЙ ВОПРОС ==========
       case 'ask_question': {
         const question = intent.data?.question || intent.proactive_question;
@@ -793,16 +1341,8 @@ async function executePersonalAction(
         break;
       }
 
-      // ========== ЧАТ (простое общение) ==========
-      case 'chat': {
-        // Для chat используем data.response от AI
-        result = intent.data?.response || intent.data?.message || 
-                 'Привет! Чем могу помочь? 😊\n\nМогу показать:\n📊 Проекты и задачи\n💰 Счета\n☀️ Погоду\n\nПросто спроси!';
-        break;
-      }
-
       default:
-        result = 'Не понял что нужно сделать 🤔\n\nПопробуй спросить:\n- какие проекты?\n- какие задачи?\n- какая погода?';
+        result = 'Не понял что нужно сделать 🤔';
     }
 
     // Сохраняем память если есть

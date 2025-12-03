@@ -952,9 +952,21 @@ export async function POST(request: NextRequest) {
       
       fetch(n8nWebhookUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify(webhookData),
-      }).catch(err => console.error('⚠️ n8n webhook error:', err));
+      })
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('⚠️ n8n webhook error:', res.status, text);
+        } else {
+          console.log('✅ n8n webhook success');
+        }
+      })
+      .catch(err => console.error('⚠️ n8n webhook error:', err));
     }
     
     // Формируем ответ с информацией о дубликатах
