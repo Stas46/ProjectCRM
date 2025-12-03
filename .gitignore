@@ -78,3 +78,6 @@ PROJECTS_README.md
 STORAGE-SETUP.md
 test-results.md
 МАССОВАЯ_ЗАГРУЗКА.md
+
+# n8n workflows with secrets (use templates instead)
+n8n/workflows/reminders-fixed.json
