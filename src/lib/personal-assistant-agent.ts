@@ -131,14 +131,19 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 - get_full_project - вся информация о проекте
 - search_data - поиск по CRM
 - get_analytics - аналитика расходов
-- create_task - создать задачу
+- create_task - создать ОДНУ задачу (data.title обязательно)
+- create_multiple_tasks - создать НЕСКОЛЬКО задач (data.tasks: [{title, priority?, description?}, ...])
 - update_task - обновить задачу
 
 **Личные:**
 - get_weather - погода сейчас и прогноз
 - get_route - маршрут и время в пути
 - calculate_departure - рассчитать когда выезжать чтобы быть в X к Y времени
-- set_reminder - установить напоминание (через N минут или в конкретное время)
+- set_reminder - установить напоминание. Параметры:
+  * data.message - текст напоминания
+  * data.time - время в формате "HH:MM" (например "10:30")
+  * data.date - "today" или "tomorrow" (по умолчанию today)
+  * data.task_ids - массив ID задач для напоминания (опционально)
 - get_traffic - уровень пробок
 - get_family - информация о семье
 - get_events - предстоящие события
@@ -387,6 +392,56 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "reasoning": "Напоминание на завтра"
 }
 
+**Создание НЕСКОЛЬКИХ задач:**
+👤: Поставь мне задачи на завтра: срочно заказать стекло, позвонить Иванову, подготовить КП
+🤖: {
+  "action": "create_multiple_tasks",
+  "data": {
+    "tasks": [
+      { "title": "Заказать стекло", "priority": "high" },
+      { "title": "Позвонить Иванову", "priority": "medium" },
+      { "title": "Подготовить КП", "priority": "medium" }
+    ]
+  },
+  "reasoning": "Пользователь перечислил несколько задач - создаю все сразу"
+}
+
+👤: Мои задачи: проверить почту, ответить клиенту, заказать материалы
+🤖: {
+  "action": "create_multiple_tasks",
+  "data": {
+    "tasks": [
+      { "title": "Проверить почту" },
+      { "title": "Ответить клиенту" },
+      { "title": "Заказать материалы" }
+    ]
+  },
+  "reasoning": "Три задачи из списка пользователя"
+}
+
+**Напоминание о созданных задачах:**
+👤: [сразу после создания задач] Напомни мне про эти задачи завтра в 10:30
+🤖: {
+  "action": "set_reminder",
+  "data": { 
+    "date": "tomorrow", 
+    "time": "10:30", 
+    "about_last_tasks": true 
+  },
+  "reasoning": "Пользователь просит напомнить про только что созданные задачи"
+}
+
+👤: [после создания 5 задач] Напомни про первые две задачи через час
+🤖: {
+  "action": "set_reminder",
+  "data": { 
+    "minutes": 60, 
+    "about_last_tasks": true,
+    "last_tasks_count": 2
+  },
+  "reasoning": "Напоминание о первых 2 задачах из последних созданных"
+}
+
 **Сохранение информации:**
 👤: Санкт-Петербург, Ленина 10
 🤖: {
@@ -419,7 +474,7 @@ export interface PersonalAssistantRequest {
     // CRM actions
     | 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' 
     | 'get_full_project' | 'search_data' | 'get_analytics'
-    | 'create_task' | 'update_task'
+    | 'create_task' | 'create_multiple_tasks' | 'update_task'
     // Personal actions
     | 'get_weather' | 'get_route' | 'calculate_departure' | 'get_traffic'
     | 'get_family' | 'get_events' | 'suggest_gift'
@@ -751,7 +806,26 @@ async function executePersonalAction(
 
       // ========== НАПОМИНАНИЯ ==========
       case 'set_reminder': {
-        const message = intent.data?.message;
+        let message = intent.data?.message;
+        
+        // Если запрошено напоминание о последних созданных задачах
+        if (intent.data?.about_last_tasks || intent.data?.last_tasks_count) {
+          const { data: contextList } = await getContext(userId);
+          const lastTasksCtx = contextList?.find(c => c.key === 'last_created_tasks');
+          const lastTasks = lastTasksCtx?.value as Array<{ id: string; title: string }> | undefined;
+          
+          if (!lastTasks || lastTasks.length === 0) {
+            result = '❓ Не могу найти недавно созданные задачи. Сначала создай задачи.';
+            break;
+          }
+          
+          // Если указано количество - берём последние N
+          const count = intent.data?.last_tasks_count || lastTasks.length;
+          const tasksToRemind = lastTasks.slice(0, count);
+          
+          message = `Напоминание о задачах:\n${tasksToRemind.map((t, i) => `${i+1}. ${t.title}`).join('\n')}`;
+        }
+        
         if (!message) {
           result = '❓ О чём тебе напомнить?';
           break;
@@ -765,20 +839,18 @@ async function executePersonalAction(
           // "через 15 минут"
           remindAt = new Date(now.getTime() + intent.data.minutes * 60 * 1000);
         } else if (intent.data?.time) {
-          // "в 18:00"
+          // "в 18:00" или "10:30"
           const [hours, minutes] = intent.data.time.split(':').map(Number);
           remindAt = new Date(now);
           remindAt.setHours(hours, minutes, 0, 0);
           
-          // Если время уже прошло сегодня — ставим на завтра
-          if (remindAt <= now) {
-            remindAt.setDate(remindAt.getDate() + 1);
-          }
-          
-          // Если указана дата "tomorrow"
+          // Если указана дата "tomorrow" - ставим на завтра
           if (intent.data?.date === 'tomorrow') {
             remindAt.setDate(now.getDate() + 1);
             remindAt.setHours(hours, minutes, 0, 0);
+          } else if (remindAt <= now) {
+            // Если время уже прошло сегодня — ставим на завтра
+            remindAt.setDate(remindAt.getDate() + 1);
           }
         } else {
           result = '❓ Когда напомнить? Укажи время (в 18:00) или интервал (через 15 минут).';
@@ -1223,7 +1295,57 @@ async function executePersonalAction(
         if (error || !task) {
           result = `❌ Ошибка создания задачи: ${error}`;
         } else {
+          // Сохраняем последние созданные задачи в контекст для напоминаний
+          await saveContext(userId, 'fact', 'last_created_tasks', [{
+            id: task.id,
+            title: task.title
+          }], { ttlDays: 1 });
           result = `✅ Создал задачу: "${title}"`;
+        }
+        break;
+      }
+
+      // ========== CRM: СОЗДАТЬ НЕСКОЛЬКО ЗАДАЧ ==========
+      case 'create_multiple_tasks': {
+        const tasks = intent.data?.tasks;
+        if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+          result = '❌ Не указаны задачи для создания';
+          break;
+        }
+        
+        const createdTasks: { id: string; title: string }[] = [];
+        const errors: string[] = [];
+        
+        for (const t of tasks) {
+          if (!t.title) {
+            errors.push('Пропущена задача без названия');
+            continue;
+          }
+          const taskData = {
+            title: t.title,
+            priority: t.priority || 2,
+            status: 'todo' as const,
+            description: t.description
+          };
+          const { data: task, error } = await createTask(userId, taskData);
+          if (error || !task) {
+            errors.push(`"${t.title}": ${error}`);
+          } else {
+            createdTasks.push({ id: task.id, title: task.title });
+          }
+        }
+        
+        // Сохраняем созданные задачи в контекст для напоминаний
+        if (createdTasks.length > 0) {
+          await saveContext(userId, 'fact', 'last_created_tasks', createdTasks, { ttlDays: 1 });
+        }
+        
+        if (createdTasks.length === 0) {
+          result = `❌ Не удалось создать задачи:\n${errors.join('\n')}`;
+        } else if (errors.length > 0) {
+          result = `✅ Создал ${createdTasks.length} задач:\n${createdTasks.map((t, i) => `${i+1}. ${t.title}`).join('\n')}\n\n⚠️ Ошибки:\n${errors.join('\n')}`;
+        } else {
+          result = `✅ Создал ${createdTasks.length} задач:\n${createdTasks.map((t, i) => `${i+1}. ${t.title}`).join('\n')}`;
         }
         break;
       }
