@@ -374,7 +374,23 @@ export function calculateDepartureTime(arrivalTime: string, durationMinutes: num
  */
 export async function geocodeAddress(address: string): Promise<{ data: GeocodingData | null; error: string | null }> {
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=ru`;
+    // Нормализуем запрос для лучшего поиска
+    let searchQuery = address;
+    
+    // Если это похоже на название организации (детский сад, школа и т.д.)
+    const orgPatterns = [
+      /детский сад/i, /садик/i, /школа/i, /магазин/i, /поликлиника/i,
+      /больница/i, /аптека/i, /банк/i, /ресторан/i, /кафе/i
+    ];
+    const isOrganization = orgPatterns.some(p => p.test(address));
+    
+    // Добавляем Санкт-Петербург если не указан город
+    if (!/(санкт-петербург|спб|москва|мск)/i.test(address)) {
+      searchQuery = address + ' Санкт-Петербург';
+    }
+    
+    // Сначала пробуем Nominatim
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&countrycodes=ru`;
     
     const response = await fetch(url, {
       headers: {
@@ -385,7 +401,15 @@ export async function geocodeAddress(address: string): Promise<{ data: Geocoding
     const data = await response.json();
     
     if (data.length > 0) {
-      const result = data[0];
+      // Если это организация, ищем наиболее подходящий результат
+      let result = data[0];
+      if (isOrganization) {
+        const betterMatch = data.find((r: any) => 
+          r.class === 'amenity' || r.class === 'shop' || r.class === 'building'
+        );
+        if (betterMatch) result = betterMatch;
+      }
+      
       return {
         data: {
           lat: parseFloat(result.lat),
@@ -396,9 +420,31 @@ export async function geocodeAddress(address: string): Promise<{ data: Geocoding
       };
     }
     
+    // Если не найдено и упоминается метро, ищем координаты метро
+    const metroMatch = address.match(/метро\s+([а-яё]+(?:\s+[а-яё]+)?)/i);
+    if (metroMatch) {
+      const metroName = metroMatch[1];
+      const metroUrl = `https://nominatim.openstreetmap.org/search?format=json&q=метро ${encodeURIComponent(metroName)} Санкт-Петербург&limit=1`;
+      const metroResponse = await fetch(metroUrl, {
+        headers: { 'User-Agent': 'GlazingCRM/1.0' }
+      });
+      const metroData = await metroResponse.json();
+      
+      if (metroData.length > 0) {
+        return {
+          data: {
+            lat: parseFloat(metroData[0].lat),
+            lon: parseFloat(metroData[0].lon),
+            formatted_address: `Район метро ${metroName} (точный адрес не найден)`
+          },
+          error: null
+        };
+      }
+    }
+    
     return { 
       data: null, 
-      error: 'Адрес не найден. Попробуй указать более полный адрес.' 
+      error: 'Адрес не найден. Попробуй указать точный адрес улицы и дом.' 
     };
   } catch (error) {
     console.error('Geocoding error:', error);

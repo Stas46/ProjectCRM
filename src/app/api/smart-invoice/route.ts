@@ -935,6 +935,17 @@ export async function POST(request: NextRequest) {
     // Отправка уведомления через n8n (асинхронно, не блокируем ответ)
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
     if (n8nWebhookUrl) {
+      // Получаем название проекта если есть
+      let projectName = null;
+      if (projectId) {
+        const { data: projectData } = await supabase
+          .from('projects')
+          .select('title')
+          .eq('id', projectId)
+          .single();
+        projectName = projectData?.title || null;
+      }
+      
       // Плоская структура для простоты использования в n8n
       const webhookData = {
         type: 'invoice_created',
@@ -945,6 +956,7 @@ export async function POST(request: NextRequest) {
         supplier_name: parsed?.supplier_name || '',
         supplier_inn: parsed?.supplier_inn || '',
         project_id: projectId || null,
+        project_name: projectName,
         file_url: invoice.file_url || '',
         timestamp: new Date().toISOString(),
       };

@@ -1,0 +1,123 @@
+{
+  "name": "Telegram Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "minutes", "minutesInterval": 1}]
+        }
+      },
+      "id": "trigger",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-800, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://fpnugtlchxigwpqwiczc.supabase.co/rest/v1/user_reminders",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "select", "value": "*"},
+            {"name": "sent", "value": "eq.false"},
+            {"name": "remind_at", "value": "=lte.{{ $now.toISO() }}"},
+            {"name": "limit", "value": "10"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwbnVndGxjaHhpZ3dwcXdpY3pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODU2MzU2NiwiZXhwIjoyMDc0MTM5NTY2fQ.ftt6SarcB_ngyqCeT1x9Ukc_x2E4pHm2tNBkdlP1qNE"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwbnVndGxjaHhpZ3dwcXdpY3pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODU2MzU2NiwiZXhwIjoyMDc0MTM5NTY2fQ.ftt6SarcB_ngyqCeT1x9Ukc_x2E4pHm2tNBkdlP1qNE"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-reminders",
+      "name": "Get Reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [-600, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "has-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {"type": "string", "operation": "exists"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-reminders",
+      "name": "Has Reminders",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-400, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Сохраняем данные напоминания для следующих шагов\nconst reminder = $input.first().json;\nreturn {\n  json: {\n    reminder_id: reminder.id,\n    telegram_chat_id: reminder.telegram_chat_id,\n    message: reminder.message\n  }\n};"
+      },
+      "id": "save-data",
+      "name": "Save Reminder Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "=🔔 *Напоминание!*\n\n{{ $json.message }}",
+        "additionalFields": {"parse_mode": "Markdown"}
+      },
+      "id": "send-telegram",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "credentials": {
+        "telegramApi": {"id": "lFzUY6v38TlbxMtW", "name": "Telegram account"}
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fpnugtlchxigwpqwiczc.supabase.co/rest/v1/user_reminders?id=eq.{{ $('Save Reminder Data').item.json.reminder_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwbnVndGxjaHhpZ3dwcXdpY3pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODU2MzU2NiwiZXhwIjoyMDc0MTM5NTY2fQ.ftt6SarcB_ngyqCeT1x9Ukc_x2E4pHm2tNBkdlP1qNE"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwbnVndGxjaHhpZ3dwcXdpY3pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODU2MzU2NiwiZXhwIjoyMDc0MTM5NTY2fQ.ftt6SarcB_ngyqCeT1x9Ukc_x2E4pHm2tNBkdlP1qNE"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=minimal"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"sent\": true}",
+        "options": {}
+      },
+      "id": "mark-sent",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [200, 300]
+    }
+  ],
+  "connections": {
+    "Every Minute": {"main": [[{"node": "Get Reminders", "type": "main", "index": 0}]]},
+    "Get Reminders": {"main": [[{"node": "Has Reminders", "type": "main", "index": 0}]]},
+    "Has Reminders": {"main": [[{"node": "Save Reminder Data", "type": "main", "index": 0}]]},
+    "Save Reminder Data": {"main": [[{"node": "Send Telegram", "type": "main", "index": 0}]]},
+    "Send Telegram": {"main": [[{"node": "Mark as Sent", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}

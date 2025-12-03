@@ -44,6 +44,45 @@ const deepseek = new OpenAI({
   baseURL: 'https://api.deepseek.com'
 });
 
+// OpenAI как резервный вариант
+const openaiClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+});
+
+// Функция для вызова LLM с fallback
+async function callLLM(messages: any[], options: { maxTokens?: number } = {}) {
+  const maxTokens = options.maxTokens || 1000;
+  
+  // Пробуем DeepSeek
+  try {
+    const response = await deepseek.chat.completions.create({
+      model: 'deepseek-chat',
+      messages,
+      temperature: 0.1,
+      max_tokens: maxTokens,
+    });
+    return response.choices[0].message.content || '';
+  } catch (deepseekError: any) {
+    console.error('❌ DeepSeek error, trying OpenAI fallback:', deepseekError.message || deepseekError);
+    
+    // Fallback на OpenAI
+    try {
+      const response = await openaiClient.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        temperature: 0.1,
+        max_tokens: maxTokens,
+      });
+      console.log('✅ OpenAI fallback successful');
+      return response.choices[0].message.content || '';
+    } catch (openaiError: any) {
+      console.error('❌ OpenAI fallback also failed:', openaiError.message || openaiError);
+      throw new Error('Both DeepSeek and OpenAI failed');
+    }
+  }
+}
+
 // ============================================
 // СИСТЕМНЫЙ ПРОМПТ
 // ============================================
@@ -441,17 +480,10 @@ async function analyzePersonalIntent(
       });
     }
 
-    const response = await deepseek.chat.completions.create({
-      model: 'deepseek-chat',
-      messages: [
+    const content = await callLLM([
         { role: 'system', content: PERSONAL_ASSISTANT_SYSTEM_PROMPT },
         { role: 'user', content: userMessage + contextMessage }
-      ],
-      temperature: 0.6,
-      max_tokens: 1000
-    });
-
-    const content = response.choices[0].message.content || '{}';
+      ], { maxTokens: 1000 });
     consoleLog('info', '🤖 AI Raw Response:', { 
       userMessage,
       rawContent: content,
