@@ -271,7 +271,35 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 🤖: {
   "action": "get_invoices",
   "filters": {},
-  "reasoning": "Показать счета из CRM"
+  "reasoning": "Показать все счета из CRM"
+}
+
+👤: покажи последний счёт
+🤖: {
+  "action": "get_invoices",
+  "filters": { "limit": 1 },
+  "reasoning": "Показать только последний загруженный счёт"
+}
+
+👤: счета на профиль
+🤖: {
+  "action": "get_invoices",
+  "filters": { "search_items": "профиль" },
+  "reasoning": "Искать счета где в товарах упоминается 'профиль'"
+}
+
+👤: у кого мы покупали профиль
+🤖: {
+  "action": "get_invoices",
+  "filters": { "search_items": "профиль" },
+  "reasoning": "Найти счета с профилем, чтобы показать поставщиков"
+}
+
+👤: что мы покупали у Алютех
+🤖: {
+  "action": "get_invoices",
+  "filters": { "supplier_name": "Алютех" },
+  "reasoning": "Показать счета от поставщика Алютех"
 }
 
 👤: найди проект школа
@@ -1218,16 +1246,36 @@ async function executePersonalAction(
 
       // ========== CRM: СЧЕТА ==========
       case 'get_invoices': {
-        const { data: invoices } = await getUserInvoices(userId, { limit: 20 });
+        const filters: any = {};
+        
+        // Применяем фильтры из intent
+        if (intent.filters?.limit) filters.limit = intent.filters.limit;
+        if (intent.filters?.search_items) filters.search_items = intent.filters.search_items;
+        if (intent.filters?.supplier_name) filters.supplier_name = intent.filters.supplier_name;
+        if (intent.filters?.category) filters.category = intent.filters.category;
+        if (intent.filters?.paid_status !== undefined) filters.paid_status = intent.filters.paid_status;
+        
+        const { data: invoices } = await getUserInvoices(userId, filters);
+        
         if (!invoices || invoices.length === 0) {
-          result = '💰 Нет счетов';
+          if (filters.search_items) {
+            result = `💰 Не нашёл счета с товаром "${filters.search_items}"`;
+          } else if (filters.supplier_name) {
+            result = `💰 Не нашёл счета от поставщика "${filters.supplier_name}"`;
+          } else {
+            result = '💰 Нет счетов';
+          }
         } else {
-          result = `💰 **Счета:**\n\n`;
-          invoices.slice(0, 10).forEach((inv: any, i: number) => {
-            const status = inv.paid_status ? '✅' : '⏳';
-            result += `${i + 1}. ${status} ${inv.invoice_number} - ${inv.total_amount?.toLocaleString('ru-RU')} ₽\n`;
-            if (inv.supplier_name) result += `   🏪 ${inv.supplier_name}\n`;
-          });
+          // Используем улучшенное форматирование
+          result = formatInvoicesForAI(invoices);
+          
+          // Если искали товар - добавляем подсказку
+          if (filters.search_items && invoices.length > 0) {
+            const uniqueSuppliers = [...new Set(invoices.map(inv => inv.supplier_name || inv.suppliers?.name).filter(Boolean))];
+            if (uniqueSuppliers.length > 0) {
+              result += `\n\n🏢 Поставщики: ${uniqueSuppliers.join(', ')}`;
+            }
+          }
         }
         break;
       }

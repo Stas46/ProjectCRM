@@ -195,7 +195,7 @@ export async function getUserProjects(
  */
 export async function getUserInvoices(
   userId: string,
-  filters?: DataQueryFilters & { paid_status?: boolean }
+  filters?: DataQueryFilters & { paid_status?: boolean; search_items?: string }
 ): Promise<{ data: Invoice[] | null; error: string | null }> {
   try {
     const supabase = getSupabaseClient();
@@ -225,8 +225,15 @@ export async function getUserInvoices(
     if (filters?.supplier_name) {
       query = query.ilike('supplier_name', `%${filters.supplier_name}%`);
     }
+    // Поиск по товарам в счете (items)
+    if (filters?.search_items) {
+      query = query.ilike('items', `%${filters.search_items}%`);
+    }
     if (filters?.limit) {
       query = query.limit(filters.limit);
+    } else {
+      // По умолчанию ограничиваем до 10 счетов
+      query = query.limit(10);
     }
 
     const { data, error } = await query;
@@ -564,20 +571,57 @@ export function formatInvoicesForAI(invoices: Invoice[]): string {
   const totalAmount = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
   const unpaidCount = invoices.filter(inv => !inv.paid_status).length;
 
-  const formatted = invoices.map((invoice, index) => {
-    const paid = invoice.paid_status ? '✅ Оплачен' : '❌ Не оплачен';
-    const supplier = invoice.supplier_name || 'Неизвестно';
-    const amount = invoice.total_amount ? invoice.total_amount.toLocaleString('ru-RU') : 'Не указано';
-    const invoiceDate = invoice.invoice_date ? `\n   Дата: ${new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}` : '';
-    const projectInfo = invoice.project_id ? `\n   Проект ID: ${invoice.project_id}` : '';
+  // Показываем только первые 5 счетов с кратким описанием
+  const displayInvoices = invoices.slice(0, 5);
+  const hasMore = invoices.length > 5;
+
+  const formatted = displayInvoices.map((invoice, index) => {
+    const statusIcon = invoice.paid_status ? '✅' : '⏳';
+    const supplier = invoice.supplier_name || invoice.suppliers?.name || 'Неизвестно';
+    const amount = invoice.total_amount ? invoice.total_amount.toLocaleString('ru-RU') : '0';
+    const invoiceDate = invoice.invoice_date ? ` от ${new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}` : '';
     
-    return `${index + 1}. **${invoice.invoice_number || 'Без номера'}**
-   Статус: ${paid}
-   Поставщик: ${supplier}
-   Сумма: ${amount} ₽${invoiceDate}${projectInfo}`;
+    // Для первого счета показываем детали товаров
+    let itemsInfo = '';
+    if (index === 0 && invoice.items) {
+      try {
+        const items = JSON.parse(invoice.items);
+        if (Array.isArray(items) && items.length > 0) {
+          itemsInfo = '\n   📦 Товары:\n';
+          items.slice(0, 3).forEach((item: any) => {
+            const itemName = item.name || item.description || 'Товар';
+            const itemQty = item.quantity || '';
+            const itemPrice = item.price ? `${item.price} ₽` : '';
+            itemsInfo += `      • ${itemName}${itemQty ? ` (${itemQty} шт.)` : ''}${itemPrice ? ` - ${itemPrice}` : ''}\n`;
+          });
+          if (items.length > 3) {
+            itemsInfo += `      ... и еще ${items.length - 3} товаров\n`;
+          }
+        }
+      } catch (e) {
+        // Если не JSON, показываем как текст
+        if (invoice.items.length < 200) {
+          itemsInfo = `\n   📦 ${invoice.items}\n`;
+        }
+      }
+    }
+    
+    return `${index + 1}. ${statusIcon} **${invoice.invoice_number || 'Б/Н'}** - ${amount} ₽
+   🏢 ${supplier}${invoiceDate}${itemsInfo}`;
   }).join('\n\n');
 
-  return `Найдено счетов: ${invoices.length}\nНеоплачено: ${unpaidCount}\nОбщая сумма: ${totalAmount.toLocaleString('ru-RU')} ₽\n\n${formatted}`;
+  let summary = `💰 Счета:\n\n${formatted}`;
+  
+  if (hasMore) {
+    summary += `\n\n_... и еще ${invoices.length - 5} счетов_`;
+  }
+  
+  summary += `\n\n📊 Итого: ${invoices.length} счетов на ${totalAmount.toLocaleString('ru-RU')} ₽`;
+  if (unpaidCount > 0) {
+    summary += ` (не оплачено: ${unpaidCount})`;
+  }
+
+  return summary;
 }
 
 // ===== УТИЛИТЫ ДЛЯ ДАТА-АГЕНТА =====
