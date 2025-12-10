@@ -500,6 +500,64 @@ async function sendModeSelectionMenu(chatId: number, currentMode: 'ai' | 'crm' |
 }
 
 /**
+ * Отправить меню выбора проекта для привязки счёта
+ */
+async function sendProjectSelectionMenu(chatId: number, userId: string, invoiceId: string) {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    // Получаем проекты пользователя
+    const { data: projects, error } = await supabase
+      .from('projects')
+      .select('id, name, status')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error || !projects || projects.length === 0) {
+      console.log('❌ No projects found for user:', userId);
+      await sendTelegramMessage(
+        chatId,
+        '📋 У вас пока нет проектов. Счёт сохранён и будет доступен в веб-интерфейсе.'
+      );
+      return;
+    }
+
+    // Формируем inline кнопки с проектами
+    const keyboard = {
+      inline_keyboard: [
+        ...projects.map(project => [{
+          text: `${project.status === 'active' ? '✅' : '📋'} ${project.name}`,
+          callback_data: `link_invoice_${invoiceId}_${project.id}`
+        }]),
+        [{
+          text: '⏭ Пропустить',
+          callback_data: `skip_link_${invoiceId}`
+        }]
+      ]
+    };
+
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: '📂 *К какому проекту привязать счёт?*',
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      })
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending project selection menu:', error);
+  }
+}
+
+/**
  * Получить ответ от AI (DeepSeek) без CRM данных
  */
 async function getAIResponse(text: string, historyMessages: any[] = []): Promise<string> {
@@ -581,6 +639,86 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       body: JSON.stringify({
         callback_query_id: callbackQuery.id,
         text: `Режим изменён на: ${modeNames[mode]}`
+      })
+    });
+  }
+
+  // Обработка привязки счёта к проекту: link_invoice_{invoiceId}_{projectId}
+  if (data.startsWith('link_invoice_')) {
+    const parts = data.split('_');
+    const invoiceId = parts[2];
+    const projectId = parts[3];
+
+    try {
+      // Получаем userId
+      const userId = await getUserIdByTelegramId(telegramId);
+      if (!userId) {
+        await sendTelegramMessage(chatId, '❌ Не удалось определить пользователя');
+        return;
+      }
+
+      // Обновляем счёт, привязываем к проекту
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+
+      const { data: invoice, error: updateError } = await supabase
+        .from('invoices')
+        .update({ project_id: projectId })
+        .eq('id', invoiceId)
+        .select('invoice_number')
+        .single();
+
+      if (updateError) {
+        console.error('❌ Error updating invoice:', updateError);
+        await sendTelegramMessage(chatId, '❌ Не удалось привязать счёт к проекту');
+        return;
+      }
+
+      // Получаем название проекта
+      const { data: project } = await supabase
+        .from('projects')
+        .select('name')
+        .eq('id', projectId)
+        .single();
+
+      await sendTelegramMessage(
+        chatId,
+        `✅ Счёт *${invoice?.invoice_number}* привязан к проекту *${project?.name || projectId}*`
+      );
+
+      // Подтверждаем callback
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQuery.id,
+          text: `Счёт привязан к проекту ${project?.name || projectId}`
+        })
+      });
+    } catch (error: any) {
+      console.error('❌ Error linking invoice to project:', error);
+      await sendTelegramMessage(chatId, '❌ Ошибка при привязке счёта к проекту');
+    }
+  }
+
+  // Обработка пропуска привязки: skip_link_{invoiceId}
+  if (data.startsWith('skip_link_')) {
+    const invoiceId = data.split('_')[2];
+    
+    await sendTelegramMessage(
+      chatId,
+      '✅ Счёт сохранён без привязки к проекту.\nВы сможете привязать его позже в веб-интерфейсе.'
+    );
+
+    // Подтверждаем callback
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQuery.id,
+        text: 'Счёт сохранён без привязки'
       })
     });
   }
@@ -848,6 +986,11 @@ async function handleDocument(
     }
 
     await sendTelegramMessage(chatId, responseText);
+
+    // Предлагаем привязать счёт к проекту
+    if (result.invoice_id) {
+      await sendProjectSelectionMenu(chatId, userId, result.invoice_id);
+    }
 
     // Сохраняем в историю
     await saveTelegramMessage({
