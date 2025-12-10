@@ -518,6 +518,7 @@ export interface PersonalAssistantRequest {
     | 'get_tasks' | 'get_projects' | 'get_invoices' | 'get_budget' 
     | 'get_full_project' | 'search_data' | 'get_analytics'
     | 'create_task' | 'create_multiple_tasks' | 'update_task'
+    | 'send_invoice_file'
     // Personal actions
     | 'get_weather' | 'get_route' | 'calculate_departure' | 'get_traffic'
     | 'get_family' | 'get_events' | 'suggest_gift'
