@@ -302,20 +302,29 @@ async function processMessageAsync(
     const invoiceId = parts[1];
     const invoiceNumber = parts[2] || 'счёт';
     
+    console.log('📄 Sending file for invoice:', { invoiceId, invoiceNumber });
+    
     // Получаем URL файла из Supabase
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
     
-    const { data: invoice } = await supabase
+    const { data: invoice, error: fetchError } = await supabase
       .from('invoices')
       .select('file_url, file_name')
       .eq('id', invoiceId)
       .single();
     
+    console.log('📋 Invoice data from DB:', { 
+      invoice, 
+      error: fetchError?.message,
+      hasFileUrl: !!invoice?.file_url 
+    });
+    
     if (invoice?.file_url) {
       // Отправляем файл
+      console.log('📤 Sending document:', invoice.file_url);
       await sendTelegramDocument(chatId, invoice.file_url, `📄 Счёт ${invoiceNumber}`);
       
       // Сохраняем в историю что отправили файл
@@ -332,6 +341,7 @@ async function processMessageAsync(
       console.log('✅ Invoice file sent successfully');
       return;
     } else {
+      console.error('❌ No file_url found for invoice:', { invoiceId, invoice, fetchError });
       finalResponse = `❌ Файл счёта ${invoiceNumber} не найден в системе`;
     }
   }
