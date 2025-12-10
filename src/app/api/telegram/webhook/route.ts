@@ -67,6 +67,13 @@ interface TelegramMessage {
     duration: number;
     mime_type?: string;
   };
+  document?: {
+    file_id: string;
+    file_unique_id: string;
+    file_name?: string;
+    mime_type?: string;
+    file_size?: number;
+  };
   location?: {
     latitude: number;
     longitude: number;
@@ -146,6 +153,12 @@ async function processMessageAsync(
   username?: string
 ) {
   let text = message.text || '';
+
+  // Обработка входящих документов (PDF, Excel, Word)
+  if (message.document) {
+    await handleDocument(chatId, telegramId, message.document, username);
+    return;
+  }
 
   // Обработка голосовых сообщений
   if (message.voice || message.audio) {
@@ -706,6 +719,165 @@ async function handleCommand(
   } catch (error: any) {
     console.error('❌ Error in handleCommand:', error);
     await sendTelegramMessage(chatId, '❌ Произошла ошибка при выполнении команды. Попробуйте позже.');
+  }
+}
+
+/**
+ * Обработка входящего документа (PDF, Excel, Word счёт)
+ */
+async function handleDocument(
+  chatId: number,
+  telegramId: number,
+  document: { file_id: string; file_name?: string; mime_type?: string; file_size?: number },
+  username?: string
+) {
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  
+  if (!TELEGRAM_BOT_TOKEN) {
+    await sendTelegramMessage(chatId, '❌ Ошибка конфигурации бота');
+    return;
+  }
+
+  try {
+    console.log('📄 Получен документ:', document);
+
+    // Проверяем тип файла
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+      'application/vnd.ms-excel', // xls
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+      'application/msword', // doc
+      'image/jpeg',
+      'image/png'
+    ];
+
+    if (document.mime_type && !allowedTypes.includes(document.mime_type)) {
+      await sendTelegramMessage(
+        chatId,
+        '❌ Неподдерживаемый формат файла. Отправьте PDF, Excel, Word, JPEG или PNG.'
+      );
+      return;
+    }
+
+    // Проверяем размер (макс 20MB)
+    if (document.file_size && document.file_size > 20 * 1024 * 1024) {
+      await sendTelegramMessage(chatId, '❌ Файл слишком большой (макс. 20MB)');
+      return;
+    }
+
+    await sendTelegramMessage(chatId, '⏳ Распознаю счёт...');
+
+    // 1. Получить информацию о файле
+    const fileInfoResponse = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${document.file_id}`
+    );
+    const fileInfo = await fileInfoResponse.json();
+    
+    if (!fileInfo.ok) {
+      throw new Error('Не удалось получить файл из Telegram');
+    }
+
+    const filePath = fileInfo.result.file_path;
+    
+    // 2. Скачать файл
+    const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
+    const fileResponse = await fetch(fileUrl);
+    const fileBlob = await fileResponse.blob();
+    
+    // 3. Конвертировать в File для отправки на API
+    const fileName = document.file_name || 'document.pdf';
+    const file = new File([fileBlob], fileName, { type: document.mime_type || 'application/pdf' });
+    
+    // 4. Отправить на /api/smart-invoice для распознавания
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const recognitionResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/smart-invoice`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!recognitionResponse.ok) {
+      const errorText = await recognitionResponse.text();
+      console.error('❌ Smart invoice error:', errorText);
+      throw new Error('Ошибка распознавания счёта');
+    }
+
+    const result = await recognitionResponse.json();
+    
+    if (result.error) {
+      await sendTelegramMessage(chatId, `❌ ${result.error}`);
+      return;
+    }
+
+    // 5. Получаем user_id для привязки счёта
+    const userId = await getUserIdByTelegramId(telegramId);
+    
+    if (!userId) {
+      await sendTelegramMessage(
+        chatId, 
+        '❌ Не удалось определить пользователя. Используйте /link для привязки аккаунта.'
+      );
+      return;
+    }
+
+    // 6. Формируем ответ с результатами распознавания
+    const invoice = result.invoice || {};
+    const contractor = result.contractor || {};
+    
+    let responseText = '✅ *Счёт распознан!*\n\n';
+    responseText += `📄 *Номер:* ${invoice.number || 'не определен'}\n`;
+    responseText += `📅 *Дата:* ${invoice.date || 'не определена'}\n`;
+    responseText += `💰 *Сумма:* ${invoice.total_amount ? invoice.total_amount.toLocaleString('ru-RU') + ' ₽' : 'не определена'}\n`;
+    
+    if (invoice.vat_amount) {
+      responseText += `💎 *НДС:* ${invoice.vat_amount.toLocaleString('ru-RU')} ₽\n`;
+    }
+    
+    responseText += `\n👤 *Поставщик:* ${contractor.name || 'не определен'}\n`;
+    
+    if (contractor.inn) {
+      responseText += `🏢 *ИНН:* ${contractor.inn}\n`;
+    }
+    
+    responseText += `\n📎 Счёт сохранён в системе`;
+    
+    if (result.invoice_id) {
+      responseText += ` (ID: ${result.invoice_id})`;
+    }
+
+    await sendTelegramMessage(chatId, responseText);
+
+    // Сохраняем в историю
+    await saveTelegramMessage({
+      user_id: userId,
+      telegram_id: telegramId,
+      telegram_chat_id: chatId,
+      role: 'user',
+      content: `Загрузил счёт: ${fileName}`,
+      message_type: 'document',
+      intent_action: 'upload_invoice'
+    });
+
+    await saveTelegramMessage({
+      user_id: userId,
+      telegram_id: telegramId,
+      telegram_chat_id: chatId,
+      role: 'assistant',
+      content: responseText,
+      message_type: 'text',
+      intent_action: 'invoice_recognized'
+    });
+
+    console.log('✅ Документ обработан успешно:', result.invoice_id);
+
+  } catch (error: any) {
+    console.error('❌ Ошибка обработки документа:', error);
+    await sendTelegramMessage(
+      chatId,
+      '❌ Не удалось обработать документ. Попробуйте позже или отправьте файл лучшего качества.'
+    );
   }
 }
 
