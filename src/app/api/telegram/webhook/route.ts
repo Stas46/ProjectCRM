@@ -13,6 +13,13 @@ import {
   createLinkCode,
   formatForTelegram
 } from '@/lib/telegram-helper';
+import {
+  saveTelegramMessage,
+  getTelegramHistory,
+  clearTelegramHistory,
+  formatHistoryForAI,
+  trimHistory
+} from '@/lib/telegram-history';
 import { getUserTasks, getUserProjects, getUserInvoices } from '@/lib/crm-data-tools';
 
 // Инициализация OpenAI для Whisper
@@ -176,6 +183,18 @@ async function processMessageAsync(
     return;
   }
 
+  // Команда /clear - очистить историю диалога
+  if (text === '/clear') {
+    const { success } = await clearTelegramHistory(telegramId);
+    
+    if (success) {
+      await sendTelegramMessage(chatId, '🗑️ История диалога очищена. Начнём с чистого листа!');
+    } else {
+      await sendTelegramMessage(chatId, '⚠️ Не удалось очистить историю. Попробуйте позже.');
+    }
+    return;
+  }
+
   // Обработка обычного сообщения через Data Agent
   const userId = await getUserIdByTelegramId(telegramId);
   
@@ -202,11 +221,27 @@ async function processMessageAsync(
     body: JSON.stringify({ chat_id: chatId, action: 'typing' })
   });
 
+  // Получаем историю диалога
+  const { data: history } = await getTelegramHistory(telegramId, 10);
+  
+  // Сохраняем сообщение пользователя в историю
+  await saveTelegramMessage({
+    user_id: userId,
+    telegram_id: telegramId,
+    telegram_chat_id: chatId,
+    role: 'user',
+    content: text,
+    message_type: message.voice || message.audio ? 'voice' : 'text'
+  });
+
   let finalResponse = '';
+  let intentAction: string | undefined;
 
   // Режим AI - только DeepSeek без CRM
   if (currentMode === 'ai') {
-    finalResponse = await getAIResponse(text);
+    // Передаём историю в AI
+    const historyMessages = formatHistoryForAI(trimHistory(history, 8));
+    finalResponse = await getAIResponse(text, historyMessages);
   }
   // Режим CRM - только данные из CRM
   else if (currentMode === 'crm') {
@@ -217,9 +252,13 @@ async function processMessageAsync(
   else {
     try {
       console.log('🤖 Running Personal Assistant for:', text);
+      console.log('📚 History context:', history.length, 'messages');
       
       // Используем Personal Assistant который объединяет всё
       const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text);
+      
+      // Сохраняем какое действие было распознано
+      intentAction = intent.action;
       
       console.log('📊 Personal Assistant Result:', {
         sessionId,
@@ -235,7 +274,8 @@ async function processMessageAsync(
       } else {
         console.log('⚠️ Personal Assistant returned empty, falling back to AI');
         // Фоллбэк на обычный AI если ассистент не смог помочь
-        finalResponse = await getAIResponse(text);
+        const historyMessages = formatHistoryForAI(trimHistory(history, 8));
+        finalResponse = await getAIResponse(text, historyMessages);
       }
     } catch (error) {
       console.error('❌ Personal Assistant error:', error);
@@ -245,10 +285,22 @@ async function processMessageAsync(
       if (dataResponse && dataResponse !== 'Нет данных') {
         finalResponse = dataResponse;
       } else {
-        finalResponse = await getAIResponse(text);
+        const historyMessages = formatHistoryForAI(trimHistory(history, 8));
+        finalResponse = await getAIResponse(text, historyMessages);
       }
     }
   }
+
+  // Сохраняем ответ бота в историю
+  await saveTelegramMessage({
+    user_id: userId,
+    telegram_id: telegramId,
+    telegram_chat_id: chatId,
+    role: 'assistant',
+    content: finalResponse,
+    message_type: 'text',
+    intent_action: intentAction
+  });
 
   // Отправляем ответ
   console.log('📤 Sending to Telegram:', {
@@ -382,8 +434,23 @@ async function sendModeSelectionMenu(chatId: number, currentMode: 'ai' | 'crm' |
 /**
  * Получить ответ от AI (DeepSeek) без CRM данных
  */
-async function getAIResponse(text: string): Promise<string> {
+async function getAIResponse(text: string, historyMessages: any[] = []): Promise<string> {
   try {
+    const messages = [
+      {
+        role: 'system',
+        content: `Ты умный AI-ассистент в Telegram. 
+Отвечай кратко, дружелюбно и полезно.
+Используй эмодзи умеренно.
+Отвечай на русском языке.`
+      },
+      ...historyMessages,
+      {
+        role: 'user',
+        content: text
+      }
+    ];
+
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
@@ -392,19 +459,7 @@ async function getAIResponse(text: string): Promise<string> {
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
-        messages: [
-          {
-            role: 'system',
-            content: `Ты умный AI-ассистент в Telegram. 
-Отвечай кратко, дружелюбно и полезно.
-Используй эмодзи умеренно.
-Отвечай на русском языке.`
-          },
-          {
-            role: 'user',
-            content: text
-          }
-        ],
+        messages,
         temperature: 0.8,
         max_tokens: 800,
       }),
