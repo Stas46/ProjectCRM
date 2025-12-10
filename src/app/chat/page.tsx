@@ -4,13 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Send, Trash2, DollarSign, Zap, BarChart3, Paperclip, X, File, Image as ImageIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import remarkGfm from 'remark-gfm';
 
 // Lazy load компонента ReactMarkdown (тяжёлый)
 const ReactMarkdown = dynamic(() => import('react-markdown'), {
   loading: () => <div className="animate-pulse">Загрузка...</div>,
   ssr: false
 });
-const remarkGfm = dynamic(() => import('remark-gfm'), { ssr: false });
 
 interface Message {
   id: string;
