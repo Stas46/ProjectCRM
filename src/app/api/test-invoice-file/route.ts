@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     // Получаем полную информацию о счёте с file_url
     const { data: invoice, error } = await supabase
       .from('invoices')
-      .select('id, invoice_number, file_url, file_name, supplier_name, total_amount, invoice_date')
+      .select('id, invoice_number, file_url, supplier_name, total_amount, invoice_date')
       .eq('id', targetInvoice.id)
       .single();
 
@@ -93,8 +93,7 @@ export async function GET(req: NextRequest) {
         supplier: invoice.supplier_name,
         amount: invoice.total_amount,
         date: invoice.invoice_date,
-        file_url: invoice.file_url,
-        file_name: invoice.file_name
+        file_url: invoice.file_url
       },
       telegram_action: {
         method: 'sendDocument',

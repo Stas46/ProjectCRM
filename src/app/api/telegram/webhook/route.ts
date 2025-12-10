@@ -312,7 +312,7 @@ async function processMessageAsync(
     
     const { data: invoice, error: fetchError } = await supabase
       .from('invoices')
-      .select('file_url, file_name')
+      .select('file_url')
       .eq('id', invoiceId)
       .single();
     
