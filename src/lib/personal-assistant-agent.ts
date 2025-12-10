@@ -127,6 +127,7 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
 - get_tasks - задачи
 - get_projects - проекты
 - get_invoices - счета
+- send_invoice_file - отправить файл счёта (data.invoice_id обязательно)
 - get_budget - бюджет проекта
 - get_full_project - вся информация о проекте
 - search_data - поиск по CRM
@@ -279,6 +280,20 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "action": "get_invoices",
   "filters": { "limit": 1 },
   "reasoning": "Показать только последний загруженный счёт"
+}
+
+👤: пришли последний счёт
+🤖: {
+  "action": "send_invoice_file",
+  "data": { "invoice_number": "last" },
+  "reasoning": "Пользователь просит отправить файл последнего счёта"
+}
+
+👤: дай файл счёта 63
+🤖: {
+  "action": "send_invoice_file",
+  "data": { "invoice_number": "63" },
+  "reasoning": "Отправить файл счёта номер 63"
 }
 
 👤: мне нужны счета на профиль
@@ -1241,6 +1256,43 @@ async function executePersonalAction(
             }
           });
         }
+        break;
+      }
+
+      // ========== ОТПРАВКА ФАЙЛА СЧЁТА ==========
+      case 'send_invoice_file': {
+        const invoiceNumber = intent.data?.invoice_number;
+        
+        if (!invoiceNumber) {
+          result = '❌ Не указан номер счёта';
+          break;
+        }
+        
+        // Получаем счёт
+        const { data: invoices } = await getUserInvoices(userId, { limit: 10 });
+        
+        if (!invoices || invoices.length === 0) {
+          result = '💰 Нет загруженных счетов';
+          break;
+        }
+        
+        let targetInvoice;
+        if (invoiceNumber === 'last' || invoiceNumber === 'последний') {
+          targetInvoice = invoices[0]; // Первый в списке = последний по дате
+        } else {
+          targetInvoice = invoices.find(inv => 
+            inv.invoice_number === invoiceNumber || 
+            inv.invoice_number?.includes(invoiceNumber)
+          );
+        }
+        
+        if (!targetInvoice) {
+          result = `❌ Счёт "${invoiceNumber}" не найден`;
+          break;
+        }
+        
+        // Возвращаем специальный флаг для отправки файла
+        result = `__SEND_FILE__:${targetInvoice.id}:${targetInvoice.invoice_number}`;
         break;
       }
 

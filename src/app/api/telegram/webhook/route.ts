@@ -294,6 +294,46 @@ async function processMessageAsync(
     }
   }
 
+  // Проверяем нужно ли отправить файл
+  if (finalResponse.startsWith('__SEND_FILE__:')) {
+    const parts = finalResponse.split(':');
+    const invoiceId = parts[1];
+    const invoiceNumber = parts[2] || 'счёт';
+    
+    // Получаем URL файла из Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    
+    const { data: invoice } = await supabase
+      .from('invoices')
+      .select('file_url, file_name')
+      .eq('id', invoiceId)
+      .single();
+    
+    if (invoice?.file_url) {
+      // Отправляем файл
+      await sendTelegramDocument(chatId, invoice.file_url, `📄 Счёт ${invoiceNumber}`);
+      
+      // Сохраняем в историю что отправили файл
+      await saveTelegramMessage({
+        user_id: userId,
+        telegram_id: telegramId,
+        telegram_chat_id: chatId,
+        role: 'assistant',
+        content: `Отправил файл счёта ${invoiceNumber}`,
+        message_type: 'document',
+        intent_action: 'send_invoice_file'
+      });
+      
+      console.log('✅ Invoice file sent successfully');
+      return;
+    } else {
+      finalResponse = `❌ Файл счёта ${invoiceNumber} не найден в системе`;
+    }
+  }
+
   // Сохраняем ответ бота в историю
   await saveTelegramMessage({
     user_id: userId,

@@ -47,6 +47,38 @@ export async function sendTelegramMessage(chatId: number, text: string, options?
 }
 
 /**
+ * Отправить документ в Telegram
+ */
+export async function sendTelegramDocument(chatId: number, fileUrl: string, caption?: string) {
+  try {
+    console.log(`📎 Sending document to ${chatId}: ${fileUrl}`);
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        document: fileUrl,
+        caption: caption || '',
+        parse_mode: 'Markdown'
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('❌ Telegram sendDocument error:', error);
+      return { success: false, error };
+    }
+
+    const result = await response.json();
+    console.log(`✅ Document sent successfully to ${chatId}`);
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('❌ Error sending document:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Получить user_id по telegram_id
  */
 export async function getUserIdByTelegramId(telegramId: number): Promise<string | null> {
