@@ -281,18 +281,18 @@ const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `
   "reasoning": "Показать только последний загруженный счёт"
 }
 
-👤: счета на профиль
+👤: мне нужны счета на профиль
 🤖: {
   "action": "get_invoices",
-  "filters": { "search_items": "профиль" },
-  "reasoning": "Искать счета где в товарах упоминается 'профиль'"
+  "filters": { "category": "профиль" },
+  "reasoning": "Искать счета категории 'профиль'"
 }
 
 👤: у кого мы покупали профиль
 🤖: {
-  "action": "get_invoices",
-  "filters": { "search_items": "профиль" },
-  "reasoning": "Найти счета с профилем, чтобы показать поставщиков"
+  "action": "search_data",
+  "data": { "query": "профиль" },
+  "reasoning": "Поиск по всем данным CRM для нахождения информации о профиле"
 }
 
 👤: что мы покупали у Алютех
@@ -1250,16 +1250,15 @@ async function executePersonalAction(
         
         // Применяем фильтры из intent
         if (intent.filters?.limit) filters.limit = intent.filters.limit;
-        if (intent.filters?.search_items) filters.search_items = intent.filters.search_items;
-        if (intent.filters?.supplier_name) filters.supplier_name = intent.filters.supplier_name;
         if (intent.filters?.category) filters.category = intent.filters.category;
+        if (intent.filters?.supplier_name) filters.supplier_name = intent.filters.supplier_name;
         if (intent.filters?.paid_status !== undefined) filters.paid_status = intent.filters.paid_status;
         
         const { data: invoices } = await getUserInvoices(userId, filters);
         
         if (!invoices || invoices.length === 0) {
-          if (filters.search_items) {
-            result = `💰 Не нашёл счета с товаром "${filters.search_items}"`;
+          if (filters.category) {
+            result = `💰 Не нашёл счета категории "${filters.category}". Попробуй общий поиск.`;
           } else if (filters.supplier_name) {
             result = `💰 Не нашёл счета от поставщика "${filters.supplier_name}"`;
           } else {
@@ -1269,12 +1268,9 @@ async function executePersonalAction(
           // Используем улучшенное форматирование
           result = formatInvoicesForAI(invoices);
           
-          // Если искали товар - добавляем подсказку
-          if (filters.search_items && invoices.length > 0) {
-            const uniqueSuppliers = [...new Set(invoices.map(inv => inv.supplier_name || inv.suppliers?.name).filter(Boolean))];
-            if (uniqueSuppliers.length > 0) {
-              result += `\n\n🏢 Поставщики: ${uniqueSuppliers.join(', ')}`;
-            }
+          // Если искали поставщика - добавляем подсказку
+          if (filters.supplier_name && invoices.length > 0) {
+            result += `\n\n✅ Найдено ${invoices.length} счетов от ${filters.supplier_name}`;
           }
         }
         break;

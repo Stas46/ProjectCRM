@@ -571,7 +571,7 @@ export function formatInvoicesForAI(invoices: Invoice[]): string {
   const totalAmount = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
   const unpaidCount = invoices.filter(inv => !inv.paid_status).length;
 
-  // Показываем только первые 5 счетов с кратким описанием
+  // Показываем только первые 5 счетов
   const displayInvoices = invoices.slice(0, 5);
   const hasMore = invoices.length > 5;
 
@@ -581,33 +581,8 @@ export function formatInvoicesForAI(invoices: Invoice[]): string {
     const amount = invoice.total_amount ? invoice.total_amount.toLocaleString('ru-RU') : '0';
     const invoiceDate = invoice.invoice_date ? ` от ${new Date(invoice.invoice_date).toLocaleDateString('ru-RU')}` : '';
     
-    // Для первого счета показываем детали товаров
-    let itemsInfo = '';
-    if (index === 0 && invoice.items) {
-      try {
-        const items = JSON.parse(invoice.items);
-        if (Array.isArray(items) && items.length > 0) {
-          itemsInfo = '\n   📦 Товары:\n';
-          items.slice(0, 3).forEach((item: any) => {
-            const itemName = item.name || item.description || 'Товар';
-            const itemQty = item.quantity || '';
-            const itemPrice = item.price ? `${item.price} ₽` : '';
-            itemsInfo += `      • ${itemName}${itemQty ? ` (${itemQty} шт.)` : ''}${itemPrice ? ` - ${itemPrice}` : ''}\n`;
-          });
-          if (items.length > 3) {
-            itemsInfo += `      ... и еще ${items.length - 3} товаров\n`;
-          }
-        }
-      } catch (e) {
-        // Если не JSON, показываем как текст
-        if (invoice.items.length < 200) {
-          itemsInfo = `\n   📦 ${invoice.items}\n`;
-        }
-      }
-    }
-    
-    return `${index + 1}. ${statusIcon} **${invoice.invoice_number || 'Б/Н'}** - ${amount} ₽
-   🏢 ${supplier}${invoiceDate}${itemsInfo}`;
+    return `${index + 1}. ${statusIcon} ${invoice.invoice_number || 'Б/Н'} - ${amount} ₽
+   🏢 ${supplier}${invoiceDate}`;
   }).join('\n\n');
 
   let summary = `💰 Счета:\n\n${formatted}`;
