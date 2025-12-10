@@ -58,6 +58,12 @@ interface TelegramMessage {
     duration: number;
     mime_type?: string;
   };
+  location?: {
+    latitude: number;
+    longitude: number;
+    horizontal_accuracy?: number;
+    live_period?: number;
+  };
   date: number;
 }
 
@@ -91,7 +97,10 @@ export async function POST(req: NextRequest) {
 
     // Обработка callback query (нажатия на кнопки)
     if (update.callback_query) {
-      await handleCallbackQuery(update.callback_query);
+      // Не ждём, обрабатываем асинхронно
+      handleCallbackQuery(update.callback_query).catch(err => 
+        console.error('Callback query error:', err)
+      );
       return NextResponse.json({ ok: true });
     }
 
@@ -104,120 +113,230 @@ export async function POST(req: NextRequest) {
     const telegramId = message.from.id;
     const username = message.from.username;
 
-    let text = message.text || '';
-
-    // Обработка голосовых сообщений
-    if (message.voice || message.audio) {
-      const fileId = message.voice?.file_id || message.audio?.file_id;
-      if (fileId) {
-        try {
-          console.log('🎤 Processing voice message:', fileId);
-          text = await transcribeVoiceMessage(fileId);
-          console.log('📝 Transcribed text:', text);
-          
-          // Уведомляем пользователя что голос распознан
-          await sendTelegramMessage(chatId, `🎤 _Распознано:_ ${text}`);
-        } catch (error) {
-          console.error('❌ Voice transcription error:', error);
-          await sendTelegramMessage(
-            chatId,
-            '❌ Не удалось распознать голосовое сообщение. Попробуйте написать текстом.'
-          );
-          return NextResponse.json({ ok: true });
-        }
-      }
-    }
-
-    if (!text) {
-      return NextResponse.json({ ok: true });
-    }
-
-    // Обработка команд
-    if (text.startsWith('/')) {
-      await handleCommand(chatId, telegramId, text, username);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Обработка обычного сообщения через Data Agent
-    const userId = await getUserIdByTelegramId(telegramId);
-    
-    if (!userId) {
-      await sendTelegramMessage(
-        chatId,
-        '❌ Ваш Telegram не привязан к аккаунту CRM.\n\nОтправьте /start для получения кода привязки.'
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    // Получаем текущий режим пользователя
-    const currentMode = getUserMode(telegramId);
-    console.log(`🎯 User mode: ${currentMode}`);
-
-    let finalResponse = '';
-
-    // Режим AI - только DeepSeek без CRM
-    if (currentMode === 'ai') {
-      finalResponse = await getAIResponse(text);
-    }
-    // Режим CRM - только данные из CRM
-    else if (currentMode === 'crm') {
-      const { data: dataResponse } = await runDataAgent(userId, text);
-      finalResponse = dataResponse || 'Нет данных в CRM по вашему запросу.';
-    }
-    // Гибридный режим - Personal Assistant (CRM + личное + погода)
-    else {
-      try {
-        console.log('🤖 Running Personal Assistant for:', text);
-        
-        // Используем Personal Assistant который объединяет всё
-        const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text);
-        
-        console.log('📊 Personal Assistant Result:', {
-          sessionId,
-          action: intent.action,
-          reasoning: intent.reasoning,
-          responseLength: assistantResponse?.length || 0,
-          hasProactiveQuestion: !!intent.proactive_question
-        });
-        
-        if (assistantResponse && assistantResponse !== 'Нет данных') {
-          console.log('✅ Personal Assistant response:', assistantResponse.substring(0, 200));
-          finalResponse = assistantResponse;
-        } else {
-          console.log('⚠️ Personal Assistant returned empty, falling back to AI');
-          // Фоллбэк на обычный AI если ассистент не смог помочь
-          finalResponse = await getAIResponse(text);
-        }
-      } catch (error) {
-        console.error('❌ Personal Assistant error:', error);
-        // Фоллбэк на старый Data Agent
-        const { data: dataResponse } = await runDataAgent(userId, text);
-        
-        if (dataResponse && dataResponse !== 'Нет данных') {
-          finalResponse = dataResponse;
-        } else {
-          finalResponse = await getAIResponse(text);
-        }
-      }
-    }
-
-    // Отправляем ответ
-    console.log('📤 Sending to Telegram:', {
-      chatId,
-      responseLength: finalResponse.length,
-      preview: finalResponse.substring(0, 100)
-    });
-    
-    const formattedResponse = formatForTelegram(finalResponse);
-    await sendTelegramMessage(chatId, formattedResponse || 'Не удалось получить ответ');
-
-    console.log('✅ Message sent successfully');
+    // Быстро отвечаем Telegram что запрос принят
+    // А обработку делаем асинхронно в фоне
+    processMessageAsync(message, chatId, telegramId, username).catch(err =>
+      console.error('Message processing error:', err)
+    );
 
     return NextResponse.json({ ok: true });
 
   } catch (error: any) {
     console.error('❌ Telegram webhook error:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Асинхронная обработка сообщения (не блокирует ответ Telegram)
+ */
+async function processMessageAsync(
+  message: TelegramMessage,
+  chatId: number,
+  telegramId: number,
+  username?: string
+) {
+  let text = message.text || '';
+
+  // Обработка голосовых сообщений
+  if (message.voice || message.audio) {
+    const fileId = message.voice?.file_id || message.audio?.file_id;
+    if (fileId) {
+      try {
+        console.log('🎤 Processing voice message:', fileId);
+        text = await transcribeVoiceMessage(fileId);
+        console.log('📝 Transcribed text:', text);
+        
+        // Уведомляем пользователя что голос распознан
+        await sendTelegramMessage(chatId, `🎤 _Распознано:_ ${text}`);
+      } catch (error) {
+        console.error('❌ Voice transcription error:', error);
+        await sendTelegramMessage(
+          chatId,
+          '❌ Не удалось распознать голосовое сообщение. Попробуйте написать текстом.'
+        );
+        return;
+      }
+    }
+  }
+
+  // Обработка геолокации
+  if (message.location) {
+    await handleLocation(chatId, telegramId, message.location);
+    return;
+  }
+
+  if (!text) {
+    return;
+  }
+
+  // Обработка команд
+  if (text.startsWith('/')) {
+    await handleCommand(chatId, telegramId, text, username);
+    return;
+  }
+
+  // Обработка обычного сообщения через Data Agent
+  const userId = await getUserIdByTelegramId(telegramId);
+  
+  if (!userId) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Ваш Telegram не привязан к аккаунту CRM.\n\nОтправьте /start для получения кода привязки.'
+    );
+    return;
+  }
+
+  // Получаем текущий режим пользователя
+  const currentMode = getUserMode(telegramId);
+  console.log(`🎯 User mode: ${currentMode}`);
+
+  // Сохраняем telegram_chat_id для напоминаний
+  const { saveContext } = await import('@/lib/personal-data-tools');
+  await saveContext(userId, 'fact', 'telegram_chat_id', chatId);
+
+  // Показываем индикатор набора текста
+  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendChatAction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, action: 'typing' })
+  });
+
+  let finalResponse = '';
+
+  // Режим AI - только DeepSeek без CRM
+  if (currentMode === 'ai') {
+    finalResponse = await getAIResponse(text);
+  }
+  // Режим CRM - только данные из CRM
+  else if (currentMode === 'crm') {
+    const { data: dataResponse } = await runDataAgent(userId, text);
+    finalResponse = dataResponse || 'Нет данных в CRM по вашему запросу.';
+  }
+  // Гибридный режим - Personal Assistant (CRM + личное + погода)
+  else {
+    try {
+      console.log('🤖 Running Personal Assistant for:', text);
+      
+      // Используем Personal Assistant который объединяет всё
+      const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text);
+      
+      console.log('📊 Personal Assistant Result:', {
+        sessionId,
+        action: intent.action,
+        reasoning: intent.reasoning,
+        responseLength: assistantResponse?.length || 0,
+        hasProactiveQuestion: !!intent.proactive_question
+      });
+      
+      if (assistantResponse && assistantResponse !== 'Нет данных') {
+        console.log('✅ Personal Assistant response:', assistantResponse.substring(0, 200));
+        finalResponse = assistantResponse;
+      } else {
+        console.log('⚠️ Personal Assistant returned empty, falling back to AI');
+        // Фоллбэк на обычный AI если ассистент не смог помочь
+        finalResponse = await getAIResponse(text);
+      }
+    } catch (error) {
+      console.error('❌ Personal Assistant error:', error);
+      // Фоллбэк на старый Data Agent
+      const { data: dataResponse } = await runDataAgent(userId, text);
+      
+      if (dataResponse && dataResponse !== 'Нет данных') {
+        finalResponse = dataResponse;
+      } else {
+        finalResponse = await getAIResponse(text);
+      }
+    }
+  }
+
+  // Отправляем ответ
+  console.log('📤 Sending to Telegram:', {
+    chatId,
+    responseLength: finalResponse.length,
+    preview: finalResponse.substring(0, 100)
+  });
+  
+  const formattedResponse = formatForTelegram(finalResponse);
+  await sendTelegramMessage(chatId, formattedResponse || 'Не удалось получить ответ');
+
+  console.log('✅ Message sent successfully');
+}
+/**
+ * Обработка геолокации от пользователя
+ */
+async function handleLocation(
+  chatId: number, 
+  telegramId: number, 
+  location: { latitude: number; longitude: number; live_period?: number }
+) {
+  const userId = await getUserIdByTelegramId(telegramId);
+  
+  if (!userId) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Ваш Telegram не привязан к аккаунту CRM.\n\nОтправьте /start для получения кода привязки.'
+    );
+    return;
+  }
+
+  const { latitude, longitude, live_period } = location;
+  const isLive = !!live_period;
+
+  try {
+    // Reverse geocoding - получаем адрес по координатам
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=ru`;
+    
+    const geoResponse = await fetch(nominatimUrl, {
+      headers: { 'User-Agent': 'GlazingCRM/1.0' }
+    });
+    
+    let address = 'Неизвестный адрес';
+    let displayName = '';
+    
+    if (geoResponse.ok) {
+      const geoData = await geoResponse.json();
+      displayName = geoData.display_name || '';
+      address = geoData.address ? 
+        `${geoData.address.road || ''} ${geoData.address.house_number || ''}, ${geoData.address.city || geoData.address.town || geoData.address.village || ''}`.trim() :
+        displayName;
+    }
+
+    // Сохраняем текущую позицию в контекст
+    const { saveContext } = await import('@/lib/personal-data-tools');
+    await saveContext(userId, 'fact', 'current_location', { 
+      latitude, 
+      longitude, 
+      address,
+      displayName,
+      isLive,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Формируем ответ
+    const locationEmoji = isLive ? '📍🔴' : '📍';
+    const liveText = isLive ? ' (транслируется в реальном времени)' : '';
+    
+    const responseText = `${locationEmoji} *Получил твою геопозицию!*${liveText}
+
+📍 *Координаты:* \`${latitude.toFixed(6)}, ${longitude.toFixed(6)}\`
+🏠 *Адрес:* ${address}
+
+✅ Сохранил как текущее местоположение. Теперь могу:
+• Построить маршрут от твоей позиции
+• Показать погоду в этом месте
+• Найти ближайшие места
+
+_Напиши, например: "погода здесь" или "как добраться до Невского проспекта"_`;
+
+    await sendTelegramMessage(chatId, responseText);
+    
+  } catch (error) {
+    console.error('❌ Error handling location:', error);
+    await sendTelegramMessage(
+      chatId,
+      `📍 Получил координаты: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}\n\n⚠️ Не удалось определить адрес, но координаты сохранены.`
+    );
   }
 }
 

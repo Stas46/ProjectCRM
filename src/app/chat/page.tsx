@@ -3,8 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, Trash2, DollarSign, Zap, BarChart3, Paperclip, X, File, Image as ImageIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import dynamic from 'next/dynamic';
+
+// Lazy load компонента ReactMarkdown (тяжёлый)
+const ReactMarkdown = dynamic(() => import('react-markdown'), {
+  loading: () => <div className="animate-pulse">Загрузка...</div>,
+  ssr: false
+});
+const remarkGfm = dynamic(() => import('remark-gfm'), { ssr: false });
 
 interface Message {
   id: string;
@@ -89,15 +95,17 @@ export default function ChatPage() {
   async function loadMessages() {
     try {
       const { supabase } = await import('@/lib/supabase');
+      // Загружаем только последние 50 сообщений вместо 20
+      // При прокрутке вверх можно подгружать ещё
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('agent_type', agentType) // Фильтруем по типу агента
-        .order('created_at', { ascending: false }) // Сначала новые
-        .limit(20); // Загружаем только последние 20 сообщений
+        .eq('agent_type', agentType)
+        .order('created_at', { ascending: false })
+        .limit(50); // Увеличили с 20 до 50 для лучшего UX
 
       if (error) throw error;
-      setMessages((data || []).reverse()); // Переворачиваем обратно для правильного порядка
+      setMessages((data || []).reverse());
     } catch (err) {
       console.error('Load messages error:', err);
     }
