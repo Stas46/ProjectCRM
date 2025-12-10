@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import { runDataAgent } from '@/lib/data-agent';
 import { runPersonalAssistant } from '@/lib/personal-assistant-agent';
