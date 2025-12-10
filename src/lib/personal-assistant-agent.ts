@@ -499,12 +499,16 @@ async function analyzePersonalIntent(
   userId: string,
   sessionId: string,
   userProfile?: UserProfile | null,
-  familyMembers?: FamilyMember[]
+  familyMembers?: FamilyMember[],
+  conversationHistory?: Array<{ role: string; content: string }>
 ): Promise<PersonalAssistantRequest> {
   const log = startAgentLog(userId, 'personal_assistant', 'analyze_intent', { userMessage }, sessionId);
 
   try {
-    consoleLog('info', 'Personal Assistant: Analyzing intent...', { userMessage });
+    consoleLog('info', 'Personal Assistant: Analyzing intent...', { 
+      userMessage,
+      hasHistory: !!conversationHistory && conversationHistory.length > 0
+    });
 
     // Получаем контекст диалога
     const { data: contextData } = await getContext(userId);
@@ -535,10 +539,25 @@ async function analyzePersonalIntent(
       });
     }
 
-    const content = await callLLM([
-        { role: 'system', content: PERSONAL_ASSISTANT_SYSTEM_PROMPT },
-        { role: 'user', content: userMessage + contextMessage }
-      ], { maxTokens: 1000 });
+    // Формируем массив сообщений с историей
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: PERSONAL_ASSISTANT_SYSTEM_PROMPT }
+    ];
+
+    // Добавляем историю диалога если есть
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationHistory.forEach(msg => {
+        messages.push({ role: msg.role, content: msg.content });
+      });
+    }
+
+    // Последнее сообщение пользователя с контекстом
+    messages.push({ 
+      role: 'user', 
+      content: userMessage + contextMessage 
+    });
+
+    const content = await callLLM(messages, { maxTokens: 1000 });
     consoleLog('info', '🤖 AI Raw Response:', { 
       userMessage,
       rawContent: content,
@@ -1522,19 +1541,24 @@ async function executePersonalAction(
 
 export async function runPersonalAssistant(
   userId: string,
-  userMessage: string
+  userMessage: string,
+  conversationHistory?: Array<{ role: string; content: string }>
 ): Promise<{ data: string; intent: PersonalAssistantRequest; sessionId: string }> {
   const startTime = Date.now();
   const sessionId = `pa-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  consoleLog('info', '=== Personal Assistant Session Started ===', { sessionId, userMessage });
+  consoleLog('info', '=== Personal Assistant Session Started ===', { 
+    sessionId, 
+    userMessage,
+    historyLength: conversationHistory?.length || 0 
+  });
 
   // Загружаем профиль и семью
   const { data: profile } = await getUserProfile(userId);
   const { data: family } = await getFamilyMembers(userId);
 
-  // Анализируем намерение
-  const intent = await analyzePersonalIntent(userMessage, userId, sessionId, profile, family);
+  // Анализируем намерение (передаём историю)
+  const intent = await analyzePersonalIntent(userMessage, userId, sessionId, profile, family, conversationHistory);
 
   // Если намерение неизвестно
   if (intent.action === 'unknown') {

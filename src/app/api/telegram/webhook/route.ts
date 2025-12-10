@@ -254,8 +254,11 @@ async function processMessageAsync(
       console.log('🤖 Running Personal Assistant for:', text);
       console.log('📚 History context:', history.length, 'messages');
       
+      // Преобразуем историю для Personal Assistant
+      const historyMessages = formatHistoryForAI(trimHistory(history, 8));
+      
       // Используем Personal Assistant который объединяет всё
-      const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text);
+      const { data: assistantResponse, intent, sessionId } = await runPersonalAssistant(userId, text, historyMessages);
       
       // Сохраняем какое действие было распознано
       intentAction = intent.action;
