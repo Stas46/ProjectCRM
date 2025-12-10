@@ -35,7 +35,8 @@ import {
   getFullProjectInfo,
   createTask,
   updateTask,
-  searchAllData
+  searchAllData,
+  formatInvoicesForAI
 } from './crm-data-tools';
 import { startAgentLog, consoleLog } from './agent-logger';
 
