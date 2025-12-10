@@ -9,6 +9,7 @@ import { runDataAgent } from '@/lib/data-agent';
 import { runPersonalAssistant } from '@/lib/personal-assistant-agent';
 import {
   sendTelegramMessage,
+  sendTelegramDocument,
   getUserIdByTelegramId,
   createLinkCode,
   formatForTelegram
